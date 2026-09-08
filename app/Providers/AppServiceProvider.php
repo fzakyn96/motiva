@@ -3,6 +3,11 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Models\Role;
+use App\Models\Permission;
+use App\Policies\UserPolicy;
+use App\Policies\RolePolicy;
+use App\Policies\PermissionPolicy;
 use App\Services\Authorization\AuthorizationService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
@@ -24,6 +29,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Model::preventLazyLoading(! app()->isProduction());
+
+        Gate::policy(User::class, UserPolicy::class);
+
+        Gate::policy(Role::class, RolePolicy::class);
+
+        Gate::policy(Permission::class, PermissionPolicy::class);
 
         Gate::before(function (User $user, string $ability) {
             return app(AuthorizationService::class)
