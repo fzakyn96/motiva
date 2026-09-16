@@ -30,4 +30,40 @@ class EmployeeFactory extends Factory
             'resigned_at' => null,
         ];
     }
+
+    public function inDepartment(Department $department): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'department_id' => $department->id,
+        ]);
+    }
+
+    public function inPosition(Position $position): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'position_id' => $position->id,
+        ]);
+    }
+
+    public function managedBy(Employee $manager): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'manager_id' => $manager->id,
+        ]);
+    }
+
+    public function inactive(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_active' => false,
+        ]);
+    }
+
+    public function resigned(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_active' => false,
+            'resigned_at' => fake()->dateTimeBetween('-1 year', 'now'),
+        ]);
+    }
 }

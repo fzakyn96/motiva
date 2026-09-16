@@ -21,4 +21,18 @@ class DepartmentFactory extends Factory
             'is_active' => true,
         ];
     }
+
+    public function childOf(Department $department): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'parent_id' => $department->id,
+        ]);
+    }
+
+    public function inactive(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_active' => false,
+        ]);
+    }
 }
