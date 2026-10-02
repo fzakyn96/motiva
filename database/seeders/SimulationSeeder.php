@@ -1,0 +1,41 @@
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Illuminate\Database\Seeder;
+
+class SimulationSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $org = \App\Models\Organization::firstOrCreate(['code' => 'PTM'], ['name' => 'PT Motiva']);
+        $dept = \App\Models\Department::firstOrCreate(['code' => 'IT'], ['name' => 'IT Department', 'organization_id' => $org->id]);
+        
+        $mgrPos = \App\Models\Position::firstOrCreate(['code' => 'MGR'], ['name' => 'Manager', 'level' => 1]);
+        $stfPos = \App\Models\Position::firstOrCreate(['code' => 'STF'], ['name' => 'Staff', 'level' => 3]);
+
+        $manager = \App\Models\Employee::firstOrCreate(['identity_number' => 'MGR01'], [
+            'name' => 'Pak Manager',
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+        ]);
+
+        $staff = \App\Models\Employee::firstOrCreate(['identity_number' => 'STF01'], [
+            'name' => 'Mas Staff',
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $stfPos->id,
+            'manager_id' => $manager->id,
+        ]);
+
+        $policy = \App\Models\ApprovalPolicy::firstOrCreate(['model_type' => \App\Models\Memo::class], [
+            'name' => 'Memo Default Policy'
+        ]);
+
+        \App\Models\ApprovalPolicyStep::firstOrCreate(['approval_policy_id' => $policy->id, 'step_order' => 1], [
+            'resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class
+        ]);
+    }
+}

@@ -87,6 +87,41 @@ class ApprovalRequestResource extends Resource
                 //
             ])
             ->actions([
+                Tables\Actions\Action::make('approve')
+                    ->label('Approve')
+                    ->color('success')
+                    ->icon('heroicon-o-check')
+                    ->requiresConfirmation()
+                    ->visible(fn (\App\Models\ApprovalRequest $record) => $record->status === 'pending')
+                    ->action(function (\App\Models\ApprovalRequest $record) {
+                        $manager = \App\Models\Employee::where('identity_number', 'MGR01')->first(); // Simulated approver
+                        $resolver = new \App\Services\Approval\ApprovalResolver();
+                        try {
+                            $resolver->approve($record, $manager, 'Approved via Dashboard');
+                            \Filament\Notifications\Notification::make()->title('Approved')->success()->send();
+                        } catch (\Exception $e) {
+                            \Filament\Notifications\Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
+                        }
+                    }),
+                Tables\Actions\Action::make('reject')
+                    ->label('Reject')
+                    ->color('danger')
+                    ->icon('heroicon-o-x-mark')
+                    ->requiresConfirmation()
+                    ->visible(fn (\App\Models\ApprovalRequest $record) => $record->status === 'pending')
+                    ->form([
+                        Forms\Components\Textarea::make('notes')->required(),
+                    ])
+                    ->action(function (\App\Models\ApprovalRequest $record, array $data) {
+                        $manager = \App\Models\Employee::where('identity_number', 'MGR01')->first(); // Simulated approver
+                        $resolver = new \App\Services\Approval\ApprovalResolver();
+                        try {
+                            $resolver->reject($record, $manager, $data['notes']);
+                            \Filament\Notifications\Notification::make()->title('Rejected')->success()->send();
+                        } catch (\Exception $e) {
+                            \Filament\Notifications\Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
+                        }
+                    }),
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([

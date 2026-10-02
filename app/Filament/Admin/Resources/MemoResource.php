@@ -46,15 +46,8 @@ class MemoResource extends Resource
                         Forms\Components\DatePicker::make('date')
                             ->required()
                             ->default(now()),
-                        Forms\Components\Select::make('status')
-                            ->options([
-                                'draft' => 'Draft',
-                                'pending' => 'Pending Approval',
-                                'approved' => 'Approved',
-                                'rejected' => 'Rejected',
-                            ])
-                            ->required()
-                            ->default('draft'),
+                        Forms\Components\Hidden::make('status')
+                            ->default('pending'),
                     ])
                     ->columns(2),
             ]);
