@@ -1,0 +1,89 @@
+<?php
+
+namespace App\Services\Approval;
+
+use App\Models\ApprovalRequest;
+use App\Models\ApprovalStep;
+use App\Models\Employee;
+use Exception;
+use Illuminate\Support\Facades\DB;
+
+class ApprovalResolver
+{
+    /**
+     * Determine if an employee can approve the current step of the given request.
+     */
+    public function canApprove(ApprovalRequest $request, Employee $employee): bool
+    {
+        if ($request->status !== 'pending') {
+            return false;
+        }
+
+        $currentStep = $request->currentStep();
+        if (!$currentStep) {
+            return false;
+        }
+
+        $resolverClass = $currentStep->policyStep->resolver_class;
+        if (!class_exists($resolverClass)) {
+            return false;
+        }
+
+        /** @var AuthorityResolver $resolver */
+        $resolver = app($resolverClass);
+
+        return $resolver->hasAuthority($request, $employee);
+    }
+
+    /**
+     * Approve the current step.
+     */
+    public function approve(ApprovalRequest $request, Employee $approver, ?string $notes = null): bool
+    {
+        if (!$this->canApprove($request, $approver)) {
+            throw new Exception("Unauthorized to approve this request.");
+        }
+
+        return DB::transaction(function () use ($request, $approver, $notes) {
+            $currentStep = $request->currentStep();
+            
+            $currentStep->update([
+                'status' => 'approved',
+                'approver_employee_id' => $approver->id,
+                'notes' => $notes
+            ]);
+
+            // If this was the last step, mark request as approved
+            $nextStep = $request->currentStep();
+            if (!$nextStep) {
+                $request->update(['status' => 'approved']);
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * Reject the request.
+     */
+    public function reject(ApprovalRequest $request, Employee $approver, string $notes): bool
+    {
+        if (!$this->canApprove($request, $approver)) {
+            throw new Exception("Unauthorized to reject this request.");
+        }
+
+        return DB::transaction(function () use ($request, $approver, $notes) {
+            $currentStep = $request->currentStep();
+            
+            $currentStep->update([
+                'status' => 'rejected',
+                'approver_employee_id' => $approver->id,
+                'notes' => $notes
+            ]);
+
+            $request->update(['status' => 'rejected']);
+
+            return true;
+        });
+    }
+}
