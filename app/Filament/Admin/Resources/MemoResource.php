@@ -27,6 +27,13 @@ class MemoResource extends Resource
                 Forms\Components\Section::make('Memo Details')
                     ->description('Provide the details of the internal memo.')
                     ->schema([
+                        Forms\Components\TextInput::make('nomor_memo')
+                            ->label('Nomor Memo / Nota Dinas')
+                            ->maxLength(255),
+                        Forms\Components\TextInput::make('to_recipient')
+                            ->label('Tujuan (Kepada)')
+                            ->required()
+                            ->maxLength(255),
                         Forms\Components\Select::make('department_id')
                             ->relationship('department', 'name')
                             ->required()
@@ -57,14 +64,25 @@ class MemoResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\TextColumn::make('nomor_memo')
+                    ->label('Nomor Memo')
+                    ->sortable()
+                    ->searchable()
+                    ->weight('bold'),
                 Tables\Columns\TextColumn::make('department.name')
+                    ->sortable()
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('to_recipient')
+                    ->label('Kepada')
                     ->sortable()
                     ->searchable(),
                 Tables\Columns\TextColumn::make('creator.name')
-                    ->label('Creator')
+                    ->label('Dari')
                     ->sortable()
                     ->searchable(),
                 Tables\Columns\TextColumn::make('title')
+                    ->label('Perihal')
                     ->searchable()
                     ->weight('bold')
                     ->wrap(),
@@ -89,6 +107,13 @@ class MemoResource extends Resource
                 //
             ])
             ->actions([
+                Tables\Actions\Action::make('print')
+                    ->label('Cetak PDF')
+                    ->icon('heroicon-o-printer')
+                    ->color('info')
+                    ->url(fn (Memo $record) => route('memos.print', $record))
+                    ->openUrlInNewTab()
+                    ->visible(fn (Memo $record) => $record->status === 'approved'),
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([

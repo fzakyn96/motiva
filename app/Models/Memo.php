@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Memo extends Model
 {
-    protected $fillable = ['department_id', 'creator_employee_id', 'title', 'content', 'date', 'status'];
+    protected $fillable = ['nomor_memo', 'department_id', 'creator_employee_id', 'to_recipient', 'title', 'content', 'date', 'status'];
 
     public function department()
     {
