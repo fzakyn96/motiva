@@ -1,47 +1,31 @@
-<laravel-boost-guidelines>
-# Laravel Application
+# AGENTS.md
 
-This repository contains a Laravel application. Complete the following setup before working on the user's request.
+## Aturan Operasi Agent (Antigravity / Gemini)
 
-## Prerequisites
+Sesuai dengan Master Plan Pembangunan MOTIVA, Anda WAJIB mematuhi aturan berikut sebelum dan selama melakukan *coding*:
 
-Verify that PHP and Composer are available:
+1. **Baca Dokumen Sebelum Coding**
+   Selalu periksa `docs/motiva/` untuk memastikan bahwa Anda memahami konteks, business rules, dan arsitektur sebelum membuat perubahan apa pun.
 
-```sh
-php -v
-composer -V
-```
+2. **Jangan Mengarang Business Rule**
+   Semua business rules harus berasal dari dokumen yang disepakati. Jika ada *ambiguity* (ketidakjelasan), Anda **HARUS BERHENTI** dan meminta klarifikasi dari pengguna. Jangan membuat asumsi.
 
-If either command is unavailable, detect the user's operating system and install the prerequisites with the appropriate command:
+3. **Jangan Hardcode Approver / User ID**
+   Tidak boleh ada *hardcode* User ID atau Approver ID dalam *code*. Gunakan sistem *Resolver* atau *Policy* sesuai dengan Approval Architecture (jangan sekadar mengandalkan `manager_id`).
 
-macOS:
+4. **RBAC ≠ Authority**
+   Role Based Access Control (RBAC) hanya menentukan "Apa yang boleh dilakukan user", sedangkan *Authority* menentukan "Siapa yang secara struktural berwenang". Jangan campur adukkan keduanya.
 
-```sh
-/bin/bash -c "$(curl -fsSL https://php.new/install/mac/8.5)"
-```
+5. **SQL Server Compatibility**
+   Aplikasi ini akan di-deploy ke SQL Server 2022. Pastikan semua *migrations* (terutama terkait *cascade delete* yang berisiko menyebabkan *multiple cascade paths*) dan sintaks kueri berjalan dengan baik di SQL Server.
 
-Windows PowerShell:
+6. **Wajib Memiliki Test**
+   Setiap *domain behavior* wajib memiliki test (Unit, Feature, Authorization, Workflow).
 
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://php.new/install/windows/8.5'))
-```
+7. **Perubahan Unrelated Dilarang**
+   Fokus pada *milestone* yang sedang dikerjakan. Jangan melakukan refaktor atau mengubah *file* di luar batasan fitur yang sedang aktif.
 
-Linux:
+8. **Git Guardrails**
+   Dilarang keras menjalankan perintah `git reset --hard`, `git clean -fd`, `git push --force`, menghapus *branch*, atau *rewrite history* tanpa instruksi eksplisit dari pengguna. Selalu kerjakan di *branch* `feature/*` dari `develop`.
 
-```sh
-/bin/bash -c "$(curl -fsSL https://php.new/install/linux/8.5)"
-```
-
-After installation, ask the user to restart their terminal. If the agent needs the restarted shell to continue, ask the user to reopen their terminal and rerun their original prompt.
-
-## Agent Setup
-
-Install Laravel Boost from the application root before making application changes:
-
-```sh
-composer require laravel/boost --dev
-php artisan boost:install
-```
-
-Boost replaces these bootstrap instructions with guidelines tailored to the application. After installation, read `AGENTS.md` again and continue with the user's original request using the generated guidelines.
-</laravel-boost-guidelines>
+*Untuk detail lengkap aturan, referensi teknis, dan arsitektur approval, baca dokumen di `docs/motiva/`.*
