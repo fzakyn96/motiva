@@ -9,17 +9,21 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Pages\SubNavigationPosition;
+use App\Filament\Admin\Clusters\DataPegawai;
 
 class EmployeeResource extends Resource
 {
     protected static ?string $model = Employee::class;
 
+    protected static ?string $cluster = DataPegawai::class;
+    protected static SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
+
     protected static ?string $navigationIcon = 'heroicon-o-identification';
-    protected static ?string $navigationGroup = 'Manajemen Pengguna';
     protected static ?string $navigationLabel = 'Data Pegawai';
     protected static ?string $modelLabel = 'Pegawai';
     protected static ?string $pluralModelLabel = 'Pegawai';
-    protected static ?int $navigationSort = 0;
+    protected static ?int $navigationSort = 1;
 
     public static function form(Form $form): Form
     {
