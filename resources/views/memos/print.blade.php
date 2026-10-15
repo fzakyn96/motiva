@@ -113,7 +113,11 @@
                     <td>
                         <ol style="margin-top: 0; padding-left: 20px;">
                             @foreach($memo->participants as $participant)
-                                <li>{{ $participant }}</li>
+                                @php
+                                    $emp = is_numeric($participant) ? \App\Models\Employee::with('position')->find($participant) : null;
+                                    $displayName = $emp ? "{$emp->name} - " . ($emp->position?->name ?? 'Pegawai') : $participant;
+                                @endphp
+                                <li>{{ $displayName }}</li>
                             @endforeach
                         </ol>
                     </td>

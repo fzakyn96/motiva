@@ -74,6 +74,8 @@ class MemoObserver
                 ]);
             }
         }
+
+        $this->generateSppdForParticipants($memo);
     }
 
     /**
@@ -81,7 +83,76 @@ class MemoObserver
      */
     public function updated(Memo $memo): void
     {
-        //
+        $this->generateSppdForParticipants($memo);
+    }
+
+    /**
+     * Otomatis membuat BusinessTrip dan SPPD perorangan bagi setiap pegawai yang ditugaskan.
+     */
+    protected function generateSppdForParticipants(Memo $memo): void
+    {
+        $participants = $memo->participants;
+
+        if (empty($participants) || ! is_array($participants) || count($participants) === 0) {
+            return;
+        }
+
+        // 1. Buat atau update BusinessTrip untuk Memo ini
+        $trip = \App\Models\BusinessTrip::firstOrCreate(
+            ['memo_id' => $memo->id],
+            [
+                'activity_name' => $memo->agenda ?? ('Penugasan Nota Dinas ' . $memo->nomor_memo),
+                'destination' => $memo->location ?? '-',
+                'start_date' => $memo->assignment_start_date ?? $memo->date ?? now(),
+                'end_date' => $memo->assignment_end_date ?? $memo->assignment_start_date ?? $memo->date ?? now(),
+            ]
+        );
+
+        $trip->update([
+            'activity_name' => $memo->agenda ?? $trip->activity_name,
+            'destination' => $memo->location ?? $trip->destination,
+            'start_date' => $memo->assignment_start_date ?? $trip->start_date,
+            'end_date' => $memo->assignment_end_date ?? $memo->assignment_start_date ?? $trip->end_date,
+        ]);
+
+        $year = date('Y');
+        $month = date('m');
+
+        // 2. Buat SPPD unik untuk setiap peserta yang ditugaskan
+        foreach ($participants as $participant) {
+            $employee = is_numeric($participant)
+                ? \App\Models\Employee::find($participant)
+                : \App\Models\Employee::where('name', $participant)
+                    ->orWhere('identity_number', $participant)
+                    ->first();
+
+            if (! $employee) {
+                continue;
+            }
+
+            // Cek apakah SPPD untuk pegawai ini sudah ada di penugasan ini
+            $existing = \App\Models\Sppd::where('business_trip_id', $trip->id)
+                ->where('employee_id', $employee->id)
+                ->first();
+
+            if (! $existing) {
+                $deptCode = $employee->department?->code ?? ($memo->department?->code ?? 'GEN');
+                $count = \App\Models\Sppd::whereYear('created_at', $year)->count();
+                $seq = str_pad($count + 1, 4, '0', STR_PAD_LEFT);
+                $sppdNumber = "{$seq}/SPPD/{$deptCode}/{$month}/{$year}";
+
+                if (\App\Models\Sppd::where('sppd_number', $sppdNumber)->exists()) {
+                    $sppdNumber = "{$seq}/SPPD/{$deptCode}/{$month}/{$year}-" . $employee->id;
+                }
+
+                \App\Models\Sppd::create([
+                    'business_trip_id' => $trip->id,
+                    'employee_id' => $employee->id,
+                    'sppd_number' => $sppdNumber,
+                    'status' => 'draft',
+                ]);
+            }
+        }
     }
 
     /**

@@ -21,6 +21,33 @@ class SppdResource extends Resource
     protected static ?string $modelLabel = 'SPPD';
     protected static ?string $pluralModelLabel = 'SPPD';
 
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query;
+        }
+
+        if ($user->hasRole('Superadmin') || $user->hasRole('Admin')) {
+            return $query;
+        }
+
+        $employee = $user->employee;
+        if (! $employee) {
+            return $query;
+        }
+
+        if ($user->hasAnyRole(['Manager', 'Supervisor', 'HR'])) {
+            return $query->whereHas('employee', function ($q) use ($employee) {
+                $q->where('department_id', $employee->department_id);
+            });
+        }
+
+        return $query->where('employee_id', $employee->id);
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -67,13 +94,18 @@ class SppdResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight('bold'),
+                Tables\Columns\TextColumn::make('businessTrip.memo.nomor_memo')
+                    ->label('Nomor Memo Asal')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('-'),
                 Tables\Columns\TextColumn::make('businessTrip.activity_name')
                     ->label('Nama Kegiatan')
                     ->sortable()
                     ->searchable()
                     ->wrap(),
                 Tables\Columns\TextColumn::make('employee.name')
-                    ->label('Pegawai')
+                    ->label('Pegawai Ditugaskan')
                     ->sortable()
                     ->searchable(),
                 Tables\Columns\TextColumn::make('status')
@@ -100,7 +132,14 @@ class SppdResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status')
+                    ->label('Status')
+                    ->options([
+                        'draft' => 'Draf',
+                        'pending' => 'Menunggu Persetujuan',
+                        'approved' => 'Disetujui',
+                        'rejected' => 'Ditolak',
+                    ]),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()

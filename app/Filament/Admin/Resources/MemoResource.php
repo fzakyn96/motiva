@@ -71,9 +71,48 @@ class MemoResource extends Resource
                         Forms\Components\TextInput::make('location')
                             ->label('Tempat / Lokasi')
                             ->maxLength(255),
-                        Forms\Components\TagsInput::make('participants')
-                            ->label('Peserta')
-                            ->placeholder('Ketik nama peserta dan tekan enter')
+                        Forms\Components\Select::make('participants')
+                            ->label('Peserta Penugasan')
+                            ->multiple()
+                            ->searchable()
+                            ->preload()
+                            ->options(function () {
+                                $user = auth()->user();
+
+                                if ($user && ($user->hasRole('Superadmin') || $user->hasRole('Admin'))) {
+                                    return \App\Models\Employee::with('department')
+                                        ->get()
+                                        ->mapWithKeys(function ($emp) {
+                                            $unit = $emp->department?->name ?? 'Tanpa Unit';
+                                            return [$emp->id => "{$emp->name} ({$emp->identity_number}) - {$unit}"];
+                                        });
+                                }
+
+                                $myEmployee = $user?->employee;
+                                $departmentId = $myEmployee?->department_id;
+
+                                if (! $departmentId) {
+                                    return \App\Models\Employee::with('department')
+                                        ->get()
+                                        ->mapWithKeys(fn ($e) => [$e->id => "{$e->name} ({$e->identity_number})"]);
+                                }
+
+                                return \App\Models\Employee::where('department_id', $departmentId)
+                                    ->get()
+                                    ->mapWithKeys(function ($emp) {
+                                        return [$emp->id => "{$emp->name} ({$emp->identity_number})"];
+                                    });
+                            })
+                            ->helperText(function () {
+                                $user = auth()->user();
+                                if ($user && ($user->hasRole('Superadmin') || $user->hasRole('Admin'))) {
+                                    return 'Super Admin dapat memilih peserta dari semua unit kerja.';
+                                }
+                                $unitName = $user?->employee?->department?->name;
+                                return $unitName
+                                    ? "HR Unit {$unitName}: Hanya dapat memilih peserta dari unit {$unitName}."
+                                    : 'Pilih pegawai yang ditugaskan.';
+                            })
                             ->columnSpanFull(),
                         Forms\Components\Hidden::make('status')
                             ->default('pending'),
