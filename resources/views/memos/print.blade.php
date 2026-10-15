@@ -63,22 +63,66 @@
     <div class="title">MEMO</div>
 
     <div class="content">
-        <p>Jakarta, {{ \Carbon\Carbon::parse($memo->date)->translatedFormat('d F Y') }}</p>
+        <p>Jakarta, {{ \Carbon\Carbon::parse($memo->date)->locale('id')->translatedFormat('d F Y') }}</p>
 
         <p>
             Yang terhormat,<br>
             <strong>{{ $memo->to_recipient }}</strong>
         </p>
 
-        @if($memo->title)
-            <p><strong>Perihal: {{ $memo->title }}</strong></p>
+        @if($memo->agenda || $memo->title)
+            <p><strong>Perihal: {{ $memo->agenda ?? $memo->title }}</strong></p>
         @endif
 
         <div>
             {!! $memo->content !!}
         </div>
 
-        <p>Demikian atas perhatian dan kerjasamanya disampaikan, terima kasih</p>
+        @if($memo->assignment_start_date || $memo->agenda || $memo->location || $memo->participants)
+            <table style="width: 100%; margin-top: 20px; border-collapse: collapse;">
+                @if($memo->assignment_start_date)
+                <tr>
+                    <td style="width: 120px; vertical-align: top;">Tanggal</td>
+                    <td style="width: 20px; vertical-align: top;">:</td>
+                    <td>
+                        {{ \Carbon\Carbon::parse($memo->assignment_start_date)->locale('id')->translatedFormat('l / d F Y') }}
+                        @if($memo->assignment_end_date && $memo->assignment_start_date !== $memo->assignment_end_date)
+                            - {{ \Carbon\Carbon::parse($memo->assignment_end_date)->locale('id')->translatedFormat('l / d F Y') }}
+                        @endif
+                    </td>
+                </tr>
+                @endif
+                @if($memo->agenda)
+                <tr>
+                    <td style="vertical-align: top;">Agenda</td>
+                    <td style="vertical-align: top;">:</td>
+                    <td>{{ $memo->agenda }}</td>
+                </tr>
+                @endif
+                @if($memo->location)
+                <tr>
+                    <td style="vertical-align: top;">Tempat</td>
+                    <td style="vertical-align: top;">:</td>
+                    <td>{{ $memo->location }}</td>
+                </tr>
+                @endif
+                @if($memo->participants && count($memo->participants) > 0)
+                <tr>
+                    <td style="vertical-align: top;">Peserta</td>
+                    <td style="vertical-align: top;">:</td>
+                    <td>
+                        <ol style="margin-top: 0; padding-left: 20px;">
+                            @foreach($memo->participants as $participant)
+                                <li>{{ $participant }}</li>
+                            @endforeach
+                        </ol>
+                    </td>
+                </tr>
+                @endif
+            </table>
+        @endif
+
+        <p style="margin-top: 30px;">Demikian atas perhatian dan kerjasamanya disampaikan, terima kasih.</p>
     </div>
 
     <div class="signature">

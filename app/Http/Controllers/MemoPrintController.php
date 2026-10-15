@@ -12,6 +12,8 @@ class MemoPrintController extends Controller
         
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('memos.print', compact('memo'));
         
-        return $pdf->stream('Memo-' . ($memo->nomor_memo ?? $memo->id) . '.pdf');
+        $filename = 'Memo-' . str_replace('/', '-', $memo->nomor_memo ?? $memo->id) . '.pdf';
+        
+        return $pdf->stream($filename);
     }
 }

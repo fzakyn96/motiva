@@ -10,10 +10,13 @@ class ListMemos extends ListRecords
 {
     protected static string $resource = MemoResource::class;
 
+    protected static ?string $title = 'Daftar Memo';
+
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Buat Memo'),
         ];
     }
 }

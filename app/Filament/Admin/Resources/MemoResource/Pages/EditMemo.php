@@ -10,10 +10,28 @@ class EditMemo extends EditRecord
 {
     protected static string $resource = MemoResource::class;
 
+    protected static ?string $title = 'Ubah Memo';
+
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            Actions\DeleteAction::make()
+                ->label('Hapus'),
         ];
+    }
+
+    protected function getFormActions(): array
+    {
+        return [
+            $this->getSaveFormAction()
+                ->label('Simpan'),
+            $this->getCancelFormAction()
+                ->label('Batal'),
+        ];
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
     }
 }

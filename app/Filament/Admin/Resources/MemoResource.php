@@ -18,45 +18,67 @@ class MemoResource extends Resource
     protected static ?string $model = Memo::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
-    protected static ?string $navigationGroup = 'Document Workflow';
+    protected static ?string $navigationGroup = 'Alur Dokumen';
+    protected static ?string $modelLabel = 'Memo';
+    protected static ?string $pluralModelLabel = 'Memo';
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Memo Details')
-                    ->description('Provide the details of the internal memo.')
+                Forms\Components\Section::make('Detail Memo')
+                    ->description('Lengkapi rincian memo internal.')
                     ->schema([
                         Forms\Components\TextInput::make('nomor_memo')
                             ->label('Nomor Memo / Nota Dinas')
-                            ->maxLength(255),
+                            ->disabled()
+                            ->dehydrated(false)
+                            ->visible(fn (string $context): bool => $context === 'edit'),
                         Forms\Components\TextInput::make('to_recipient')
-                            ->label('Tujuan (Kepada)')
+                            ->label('Kepada')
                             ->required()
                             ->maxLength(255),
-                        Forms\Components\Select::make('department_id')
-                            ->relationship('department', 'name')
-                            ->required()
-                            ->searchable(),
-                        Forms\Components\Select::make('creator_employee_id')
-                            ->relationship('creator', 'name')
-                            ->label('Creator')
-                            ->required()
-                            ->searchable(),
-                        Forms\Components\TextInput::make('title')
-                            ->required()
-                            ->maxLength(255)
-                            ->columnSpanFull(),
-                        Forms\Components\RichEditor::make('content')
-                            ->required()
-                            ->columnSpanFull(),
                         Forms\Components\DatePicker::make('date')
+                            ->label('Tanggal Memo Dibuat')
+                            ->native(false)
+                            ->displayFormat('d/m/Y')
+                            ->closeOnDateSelection()
                             ->required()
                             ->default(now()),
+                        Forms\Components\RichEditor::make('content')
+                            ->label('Isi Memo')
+                            ->required()
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(['default' => 1, 'md' => 2]),
+
+                Forms\Components\Section::make('Detail Penugasan')
+                    ->description('Isi bagian ini jika memo berisi penugasan.')
+                    ->schema([
+                        Forms\Components\DatePicker::make('assignment_start_date')
+                            ->label('Tanggal Mulai Penugasan')
+                            ->native(false)
+                            ->displayFormat('d/m/Y')
+                            ->closeOnDateSelection(),
+                        Forms\Components\DatePicker::make('assignment_end_date')
+                            ->label('Tanggal Selesai Penugasan')
+                            ->native(false)
+                            ->displayFormat('d/m/Y')
+                            ->closeOnDateSelection(),
+                        Forms\Components\TextInput::make('agenda')
+                            ->label('Agenda')
+                            ->maxLength(255),
+                        Forms\Components\TextInput::make('location')
+                            ->label('Tempat / Lokasi')
+                            ->maxLength(255),
+                        Forms\Components\TagsInput::make('participants')
+                            ->label('Peserta')
+                            ->placeholder('Ketik nama peserta dan tekan enter')
+                            ->columnSpanFull(),
                         Forms\Components\Hidden::make('status')
                             ->default('pending'),
                     ])
-                    ->columns(2),
+                    ->columns(['default' => 1, 'md' => 2]),
             ]);
     }
 
@@ -70,6 +92,7 @@ class MemoResource extends Resource
                     ->searchable()
                     ->weight('bold'),
                 Tables\Columns\TextColumn::make('department.name')
+                    ->label('Departemen')
                     ->sortable()
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -81,16 +104,25 @@ class MemoResource extends Resource
                     ->label('Dari')
                     ->sortable()
                     ->searchable(),
-                Tables\Columns\TextColumn::make('title')
-                    ->label('Perihal')
+                Tables\Columns\TextColumn::make('agenda')
+                    ->label('Agenda')
                     ->searchable()
                     ->weight('bold')
                     ->wrap(),
                 Tables\Columns\TextColumn::make('date')
-                    ->date()
+                    ->label('Tanggal')
+                    ->date('d/m/Y')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('status')
+                    ->label('Status')
                     ->badge()
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        'draft' => 'Draf',
+                        'pending' => 'Menunggu Persetujuan',
+                        'approved' => 'Disetujui',
+                        'rejected' => 'Ditolak',
+                        default => ucfirst($state),
+                    })
                     ->color(fn (string $state): string => match ($state) {
                         'draft' => 'gray',
                         'pending' => 'warning',
@@ -99,6 +131,7 @@ class MemoResource extends Resource
                         default => 'gray',
                     }),
                 Tables\Columns\TextColumn::make('created_at')
+                    ->label('Dibuat Pada')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -114,11 +147,13 @@ class MemoResource extends Resource
                     ->url(fn (Memo $record) => route('memos.print', $record))
                     ->openUrlInNewTab()
                     ->visible(fn (Memo $record) => $record->status === 'approved'),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->label('Ubah'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->label('Hapus Terpilih'),
                 ]),
             ]);
     }

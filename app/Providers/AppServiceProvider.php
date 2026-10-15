@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\Gate;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -21,5 +22,9 @@ class AppServiceProvider extends ServiceProvider
     {
         \App\Models\ApprovalRequest::observe(\App\Observers\ApprovalRequestObserver::class);
         \App\Models\Memo::observe(\App\Observers\MemoObserver::class);
+
+        Gate::before(function ($user, $ability) {
+            return $user->hasRole('Superadmin') ? true : null;
+        });
     }
 }
