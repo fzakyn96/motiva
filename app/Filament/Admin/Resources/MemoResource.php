@@ -24,6 +24,43 @@ class MemoResource extends Resource
     protected static ?string $modelLabel = 'Memo';
     protected static ?string $pluralModelLabel = 'Memo';
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        // Managers only need "Persetujuan Memo", not the master "Memo" menu
+        if ($user->hasRole('Manager') && ! $user->hasRole(['Superadmin', 'Admin', 'HR'])) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public static function getNavigationItems(): array
+    {
+        return [
+            \Filament\Navigation\NavigationItem::make(static::getNavigationLabel())
+                ->group(static::getNavigationGroup())
+                ->parentItem(static::getNavigationParentItem())
+                ->icon(static::getNavigationIcon())
+                ->activeIcon(static::getActiveNavigationIcon())
+                ->isActiveWhen(function () {
+                    // When reviewing memo from approvals or by manager, "Memo" should not be marked active
+                    if (request()->routeIs('filament.admin.resources.memos.review') && (request()->query('from') === 'approvals' || auth()->user()?->hasRole('Manager'))) {
+                        return false;
+                    }
+                    return request()->routeIs(static::getRouteBaseName() . '.*');
+                })
+                ->badge(static::getNavigationBadge(), color: static::getNavigationBadgeColor())
+                ->badgeTooltip(static::getNavigationBadgeTooltip())
+                ->sort(static::getNavigationSort())
+                ->url(static::getNavigationUrl()),
+        ];
+    }
+
     public static function infolist(Infolist $infolist): Infolist
     {
         return $infolist
@@ -35,7 +72,7 @@ class MemoResource extends Resource
                             ->label('Status Pengajuan')
                             ->badge()
                             ->formatStateUsing(fn (string $state): string => match ($state) {
-                                'pending' => 'Menunggu Persetujuan Manajer',
+                                'pending' => 'Menunggu Persetujuan',
                                 'approved' => 'Disetujui',
                                 'rejected' => 'Ditolak',
                                 default => ucfirst($state),
@@ -300,24 +337,32 @@ class MemoResource extends Resource
                 Tables\Actions\Action::make('review')
                     ->label('Review')
                     ->icon('heroicon-o-eye')
+                    ->button()
+                    ->size('sm')
                     ->color('warning')
                     ->url(fn (Memo $record) => MemoResource::getUrl('review', ['record' => $record]))
                     ->visible(fn (Memo $record) => $record->status === 'pending'),
                 Tables\Actions\Action::make('view_review')
-                    ->label('Lihat Review')
+                    ->label('Lihat')
                     ->icon('heroicon-o-document-magnifying-glass')
+                    ->button()
+                    ->size('sm')
                     ->color('gray')
                     ->url(fn (Memo $record) => MemoResource::getUrl('review', ['record' => $record]))
                     ->visible(fn (Memo $record) => $record->status !== 'pending'),
                 Tables\Actions\Action::make('print')
-                    ->label('Cetak PDF')
+                    ->label('Cetak')
                     ->icon('heroicon-o-printer')
+                    ->button()
+                    ->size('sm')
                     ->color('info')
                     ->url(fn (Memo $record) => route('memos.print', $record))
                     ->openUrlInNewTab()
                     ->visible(fn (Memo $record) => $record->status === 'approved'),
                 Tables\Actions\EditAction::make()
                     ->label('Ubah')
+                    ->button()
+                    ->size('sm')
                     ->visible(fn (Memo $record) => $record->status === 'draft'),
             ])
             ->bulkActions([

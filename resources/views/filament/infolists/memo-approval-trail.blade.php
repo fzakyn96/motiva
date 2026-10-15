@@ -70,7 +70,7 @@
                         @endif
                     </div>
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                        Pemeriksa: {{ $pemeriksaName }}
+                        Manajer: {{ $pemeriksaName }}
                         @if ($step->updated_at && $step->status !== 'pending')
                             &bull; {{ \Carbon\Carbon::parse($step->updated_at)->locale('id')->translatedFormat('d F Y, H:i') }} WIB
                         @endif

@@ -4,7 +4,6 @@ namespace App\Policies;
 
 use App\Models\Memo;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 
 class MemoPolicy
 {
@@ -13,7 +12,8 @@ class MemoPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->can('view_any_memo');
+        return $user->hasAnyRole(['Admin', 'Superadmin', 'Manager', 'Supervisor', 'HR', 'Staff'])
+            || $user->can('view_any_memo');
     }
 
     /**
@@ -21,6 +21,34 @@ class MemoPolicy
      */
     public function view(User $user, Memo $memo): bool
     {
+        if ($user->hasAnyRole(['Admin', 'Superadmin'])) {
+            return true;
+        }
+
+        $employee = $user->employee;
+        if (! $employee) {
+            return $user->can('view_memo');
+        }
+
+        // Managers, Supervisors, and HR can view memos in their department or memos they created
+        if ($user->hasAnyRole(['Manager', 'Supervisor', 'HR'])) {
+            return $memo->department_id === $employee->department_id 
+                || (int) $memo->creator_employee_id === (int) $employee->id
+                || $user->can('view_memo');
+        }
+
+        // Staff can view their own memos or memos where they are assigned as participant
+        if ((int) $memo->creator_employee_id === (int) $employee->id) {
+            return true;
+        }
+
+        $participants = $memo->participants ?? [];
+        foreach ($participants as $p) {
+            if ((int) ($p['employee_id'] ?? 0) === (int) $employee->id) {
+                return true;
+            }
+        }
+
         return $user->can('view_memo');
     }
 
@@ -29,7 +57,8 @@ class MemoPolicy
      */
     public function create(User $user): bool
     {
-        return $user->can('create_memo');
+        return $user->hasAnyRole(['Admin', 'Superadmin', 'Manager', 'Supervisor', 'HR', 'Staff'])
+            || $user->can('create_memo');
     }
 
     /**
@@ -37,6 +66,20 @@ class MemoPolicy
      */
     public function update(User $user, Memo $memo): bool
     {
+        if ($user->hasAnyRole(['Admin', 'Superadmin'])) {
+            return true;
+        }
+
+        $employee = $user->employee;
+        if (! $employee) {
+            return $user->can('update_memo');
+        }
+
+        // Creator can update if still in draft
+        if ((int) $memo->creator_employee_id === (int) $employee->id && $memo->status === 'draft') {
+            return true;
+        }
+
         return $user->can('update_memo');
     }
 
@@ -45,7 +88,16 @@ class MemoPolicy
      */
     public function delete(User $user, Memo $memo): bool
     {
-        return $user->can('delete_memo');
+        if ($user->hasAnyRole(['Admin', 'Superadmin'])) {
+            return true;
+        }
+
+        $employee = $user->employee;
+        if (! $employee) {
+            return $user->can('delete_memo');
+        }
+
+        return (int) $memo->creator_employee_id === (int) $employee->id && $memo->status === 'draft';
     }
 
     /**
@@ -53,7 +105,7 @@ class MemoPolicy
      */
     public function restore(User $user, Memo $memo): bool
     {
-        return $user->can('restore_memo');
+        return $user->hasAnyRole(['Admin', 'Superadmin']);
     }
 
     /**
@@ -61,6 +113,7 @@ class MemoPolicy
      */
     public function forceDelete(User $user, Memo $memo): bool
     {
-        return $user->can('force_delete_memo');
+        return $user->hasAnyRole(['Admin', 'Superadmin']);
     }
 }
+

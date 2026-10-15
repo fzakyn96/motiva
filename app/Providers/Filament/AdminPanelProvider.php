@@ -27,13 +27,7 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             ->colors([
-                'primary' => '#4f46e5', // Indigo 600
-                'secondary' => '#10b981', // Emerald 500
-                'gray' => Color::Slate,
-                'danger' => Color::Rose,
-                'info' => Color::Blue,
-                'success' => Color::Emerald,
-                'warning' => Color::Orange,
+                'primary' => Color::Amber,
             ])
             ->font('Outfit')
             ->brandName('MOTIVA')

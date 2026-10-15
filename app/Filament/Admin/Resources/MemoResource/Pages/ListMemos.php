@@ -12,6 +12,17 @@ class ListMemos extends ListRecords
 
     protected static ?string $title = 'Daftar Memo';
 
+    public function mount(): void
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if ($user && $user->hasRole('Manager') && ! $user->hasRole(['Superadmin', 'Admin', 'HR'])) {
+            $this->redirect(\App\Filament\Admin\Resources\MemoApprovalResource::getUrl('index'));
+            return;
+        }
+
+        parent::mount();
+    }
+
     protected function getHeaderActions(): array
     {
         return [

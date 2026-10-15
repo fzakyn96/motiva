@@ -129,11 +129,20 @@
         <p style="margin-top: 30px;">Demikian atas perhatian dan kerjasamanya disampaikan, terima kasih.</p>
     </div>
 
+    @php
+        $signerTitle = $managerTitle ?? ($manager?->position?->name ?? 'Manajer ' . ($memo->department?->name ?? ''));
+        $signerName = $manager?->name ?? 'Nama Manajer';
+        $signerNip = $manager?->identity_number ?? null;
+    @endphp
+
     <div class="signature">
-        <div class="signature-title">{{ $memo->creator->position->name ?? 'Jabatan' }}</div>
-        <!-- Placeholder for signature image -->
+        <div class="signature-title">{{ $signerTitle }}</div>
+        <!-- Ruang tanda tangan -->
         <br><br><br>
-        <div class="signature-name">{{ $memo->creator->name ?? 'Nama Penandatangan' }}</div>
+        <div class="signature-name">{{ $signerName }}</div>
+        @if($signerNip)
+            <div style="font-size: 11px; color: #555; margin-top: 2px;">NIP. {{ $signerNip }}</div>
+        @endif
     </div>
 
 </body>

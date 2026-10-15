@@ -19,22 +19,40 @@ class ReviewMemo extends ViewRecord
 
     protected static ?string $title = 'Review Memo';
 
+    public function getBreadcrumbs(): array
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (request()->query('from') === 'approvals' || $user?->hasRole('Manager') || str_contains(request()->headers->get('referer', ''), 'memo-approvals')) {
+            return [
+                \App\Filament\Admin\Resources\MemoApprovalResource::getUrl('index') => 'Persetujuan Memo',
+                'Review',
+            ];
+        }
+
+        return parent::getBreadcrumbs();
+    }
+
     public function canPerformApproval(): bool
     {
-        /** @var Memo $memo */
-        $memo = $this->record;
+        /** @var Memo|null $memo */
+        $memo = $this->getRecord();
 
-        if ($memo->status !== 'pending') {
+        if (! $memo || $memo->status !== 'pending') {
             return false;
         }
 
-        $user = auth()->user();
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         if (! $user) {
             return false;
         }
 
         // Superadmin and Admin can always approve
         if ($user->hasRole('Superadmin') || $user->hasRole('Admin')) {
+            return true;
+        }
+
+        // If user is a Manager or has approve_memo permission
+        if ($user->hasRole('Manager') || $user->can('approve_memo')) {
             return true;
         }
 
@@ -48,7 +66,7 @@ class ReviewMemo extends ViewRecord
             ->first();
 
         if (! $request) {
-            return $user->hasRole('Manager');
+            return true;
         }
 
         if ($request->status !== 'pending') {
@@ -56,27 +74,17 @@ class ReviewMemo extends ViewRecord
         }
 
         $resolver = new ApprovalResolver();
-        return $resolver->canApprove($request, $employee) || $user->hasRole('Manager');
+        return $resolver->canApprove($request, $employee);
     }
 
     public function approveMemo(): void
     {
         /** @var Memo $memo */
-        $memo = $this->record;
-        $user = auth()->user();
+        $memo = $this->getRecord();
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
 
-        $request = ApprovalRequest::where('document_type', Memo::class)
-            ->where('document_id', $memo->id)
-            ->first();
-
-        if (! $request) {
-            $memo->update(['status' => 'approved']);
-            Notification::make()->title('Memo Berhasil Disetujui')->success()->send();
-            return;
-        }
-
-        if (! $employee) {
+        if (! $employee && $user) {
             $employee = Employee::firstOrCreate(
                 ['user_id' => $user->id],
                 [
@@ -87,6 +95,17 @@ class ReviewMemo extends ViewRecord
                     'position_id' => 1,
                 ]
             );
+        }
+
+        $request = ApprovalRequest::where('document_type', Memo::class)
+            ->where('document_id', $memo->id)
+            ->first();
+
+        if (! $request) {
+            $memo->update(['status' => 'approved']);
+            Notification::make()->title('Memo Berhasil Disetujui')->success()->send();
+            $this->redirect(MemoResource::getUrl('review', ['record' => $memo]));
+            return;
         }
 
         $resolver = new ApprovalResolver();
@@ -100,44 +119,35 @@ class ReviewMemo extends ViewRecord
 
             Notification::make()->title('Memo Berhasil Disetujui')->success()->send();
         } catch (\Exception $e) {
-            if ($user->hasRole('Superadmin') || $user->hasRole('Admin') || $user->hasRole('Manager')) {
-                $currentStep = $request->currentStep();
-                if ($currentStep) {
-                    $currentStep->update([
-                        'status' => 'approved',
-                        'approver_employee_id' => $employee->id,
-                        'notes' => 'Disetujui oleh ' . ($user->name ?? 'Manajer'),
-                    ]);
-                }
-                $request->update(['status' => 'approved']);
-                $memo->update(['status' => 'approved']);
-
-                Notification::make()->title('Memo Berhasil Disetujui')->success()->send();
-                return;
+            $currentStep = $request->currentStep();
+            if ($currentStep) {
+                $currentStep->update([
+                    'status' => 'approved',
+                    'approver_employee_id' => $employee?->id,
+                    'notes' => 'Disetujui oleh ' . ($user->name ?? 'Manajer'),
+                ]);
             }
+            $request->update(['status' => 'approved']);
+            $memo->update(['status' => 'approved']);
 
-            Notification::make()->title('Gagal Menyetujui Memo')->body($e->getMessage())->danger()->send();
+            Notification::make()->title('Memo Berhasil Disetujui')->success()->send();
         }
+
+        $redirectUrl = request()->query('from') === 'approvals'
+            ? MemoResource::getUrl('review', ['record' => $memo, 'from' => 'approvals'])
+            : MemoResource::getUrl('review', ['record' => $memo]);
+
+        $this->redirect($redirectUrl);
     }
 
     public function rejectMemo(string $notes): void
     {
         /** @var Memo $memo */
-        $memo = $this->record;
-        $user = auth()->user();
+        $memo = $this->getRecord();
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
 
-        $request = ApprovalRequest::where('document_type', Memo::class)
-            ->where('document_id', $memo->id)
-            ->first();
-
-        if (! $request) {
-            $memo->update(['status' => 'rejected']);
-            Notification::make()->title('Memo Berhasil Ditolak')->success()->send();
-            return;
-        }
-
-        if (! $employee) {
+        if (! $employee && $user) {
             $employee = Employee::firstOrCreate(
                 ['user_id' => $user->id],
                 [
@@ -148,6 +158,20 @@ class ReviewMemo extends ViewRecord
                     'position_id' => 1,
                 ]
             );
+        }
+
+        $request = ApprovalRequest::where('document_type', Memo::class)
+            ->where('document_id', $memo->id)
+            ->first();
+
+        if (! $request) {
+            $memo->update(['status' => 'rejected']);
+            Notification::make()->title('Memo Berhasil Ditolak')->success()->send();
+            $redirectUrl = request()->query('from') === 'approvals'
+                ? MemoResource::getUrl('review', ['record' => $memo, 'from' => 'approvals'])
+                : MemoResource::getUrl('review', ['record' => $memo]);
+            $this->redirect($redirectUrl);
+            return;
         }
 
         $resolver = new ApprovalResolver();
@@ -161,24 +185,25 @@ class ReviewMemo extends ViewRecord
 
             Notification::make()->title('Memo Berhasil Ditolak')->success()->send();
         } catch (\Exception $e) {
-            if ($user->hasRole('Superadmin') || $user->hasRole('Admin') || $user->hasRole('Manager')) {
-                $currentStep = $request->currentStep();
-                if ($currentStep) {
-                    $currentStep->update([
-                        'status' => 'rejected',
-                        'approver_employee_id' => $employee->id,
-                        'notes' => $notes,
-                    ]);
-                }
-                $request->update(['status' => 'rejected']);
-                $memo->update(['status' => 'rejected']);
-
-                Notification::make()->title('Memo Berhasil Ditolak')->success()->send();
-                return;
+            $currentStep = $request->currentStep();
+            if ($currentStep) {
+                $currentStep->update([
+                    'status' => 'rejected',
+                    'approver_employee_id' => $employee?->id,
+                    'notes' => $notes,
+                ]);
             }
+            $request->update(['status' => 'rejected']);
+            $memo->update(['status' => 'rejected']);
 
-            Notification::make()->title('Gagal Menolak Memo')->body($e->getMessage())->danger()->send();
+            Notification::make()->title('Memo Berhasil Ditolak')->success()->send();
         }
+
+        $redirectUrl = request()->query('from') === 'approvals'
+            ? MemoResource::getUrl('review', ['record' => $memo, 'from' => 'approvals'])
+            : MemoResource::getUrl('review', ['record' => $memo]);
+
+        $this->redirect($redirectUrl);
     }
 
     protected function getHeaderActions(): array
@@ -188,7 +213,7 @@ class ReviewMemo extends ViewRecord
                 ->label('Setujui Memo')
                 ->icon('heroicon-o-check-circle')
                 ->color('success')
-                ->size(ActionSize::Large)
+                // ->size(ActionSize::Large)
                 ->visible(fn () => $this->canPerformApproval())
                 ->requiresConfirmation()
                 ->modalHeading('Konfirmasi Persetujuan Memo')
@@ -201,7 +226,7 @@ class ReviewMemo extends ViewRecord
                 ->label('Tolak Memo')
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
-                ->size(ActionSize::Large)
+                // ->size(ActionSize::Large)
                 ->visible(fn () => $this->canPerformApproval())
                 ->modalHeading('Tolak Pengajuan Memo')
                 ->modalDescription('Berikan catatan atau alasan penolakan memo ini.')
@@ -216,19 +241,24 @@ class ReviewMemo extends ViewRecord
                 ->action(fn (array $data) => $this->rejectMemo($data['notes'])),
 
             Action::make('print')
-                ->label('Cetak PDF')
+                ->label('Cetak')
                 ->icon('heroicon-o-printer')
                 ->color('info')
-                ->size(ActionSize::Large)
-                ->url(fn () => route('memos.print', $this->record))
+                ->url(fn () => route('memos.print', $this->getRecord()))
                 ->openUrlInNewTab()
-                ->visible(fn () => $this->record->status === 'approved'),
+                ->visible(fn () => $this->getRecord()?->status === 'approved'),
 
             Action::make('back')
-                ->label('Kembali ke Daftar')
+                ->label('Kembali')
                 ->icon('heroicon-o-arrow-left')
                 ->color('gray')
-                ->url(fn () => MemoResource::getUrl('index')),
+                ->url(function () {
+                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                    if (request()->query('from') === 'approvals' || $user?->hasRole('Manager') || str_contains(request()->headers->get('referer', ''), 'memo-approvals')) {
+                        return \App\Filament\Admin\Resources\MemoApprovalResource::getUrl('index');
+                    }
+                    return MemoResource::getUrl('index');
+                }),
         ];
     }
 }
