@@ -19,8 +19,6 @@ class ReviewMemo extends ViewRecord
 
     protected static ?string $title = 'Review Memo';
 
-    protected static string $view = 'filament.admin.resources.memo-resource.pages.review-memo';
-
     public function canPerformApproval(): bool
     {
         /** @var Memo $memo */
@@ -181,53 +179,6 @@ class ReviewMemo extends ViewRecord
 
             Notification::make()->title('Gagal Menolak Memo')->body($e->getMessage())->danger()->send();
         }
-    }
-
-    protected function getViewData(): array
-    {
-        /** @var Memo $memo */
-        $memo = $this->record;
-        $memo->loadMissing(['department', 'creator.position', 'creator.department']);
-
-        $approvalRequest = ApprovalRequest::with([
-            'steps.approver.position',
-            'steps.policyStep',
-            'requester.position',
-            'requester.department'
-        ])
-            ->where('document_type', Memo::class)
-            ->where('document_id', $memo->id)
-            ->first();
-
-        $participantsList = [];
-        if (! empty($memo->participants) && is_array($memo->participants)) {
-            foreach ($memo->participants as $participant) {
-                $emp = is_numeric($participant)
-                    ? Employee::with(['position', 'department'])->find($participant)
-                    : Employee::with(['position', 'department'])
-                        ->where('name', $participant)
-                        ->orWhere('identity_number', $participant)
-                        ->first();
-
-                if ($emp) {
-                    $sppd = \App\Models\Sppd::whereHas('businessTrip', fn ($q) => $q->where('memo_id', $memo->id))
-                        ->where('employee_id', $emp->id)
-                        ->first();
-
-                    $participantsList[] = [
-                        'employee' => $emp,
-                        'sppd' => $sppd,
-                    ];
-                }
-            }
-        }
-
-        return [
-            'memo' => $memo,
-            'approvalRequest' => $approvalRequest,
-            'participantsList' => $participantsList,
-            'canApprove' => $this->canPerformApproval(),
-        ];
     }
 
     protected function getHeaderActions(): array
