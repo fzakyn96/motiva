@@ -31,6 +31,10 @@ class MemoObserver
             }
         }
 
+        if (empty($memo->date)) {
+            $memo->date = now();
+        }
+
         if (empty($memo->title)) {
             $memo->title = $memo->agenda ?? '-';
         }

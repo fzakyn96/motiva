@@ -124,4 +124,144 @@ class DomainMemoTest extends TestCase
 
         $this->assertEquals(2, Sppd::where('business_trip_id', $trip->id)->count());
     }
+
+    public function test_review_memo_page_allows_manager_to_approve_and_reject()
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+
+        $org = Organization::create(['name' => 'PT Pertamina Gas', 'code' => 'PGN']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'MESI', 'code' => 'MESI']);
+        $posManager = Position::create(['name' => 'Manager MESI', 'code' => 'MGR', 'level' => 1]);
+        $posStaff = Position::create(['name' => 'Staff MESI', 'code' => 'STF', 'level' => 4]);
+
+        $managerUser = \App\Models\User::factory()->create(['name' => 'Manager MESI']);
+        $managerUser->assignRole('Manager');
+
+        $managerEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $posManager->id,
+            'user_id' => $managerUser->id,
+            'name' => 'Manager MESI',
+            'identity_number' => 'MGR-001',
+        ]);
+
+        $staffUser = \App\Models\User::factory()->create(['name' => 'Staff MESI']);
+        $staffEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $posStaff->id,
+            'user_id' => $staffUser->id,
+            'manager_id' => $managerEmp->id,
+            'name' => 'Staff MESI',
+            'identity_number' => 'STF-001',
+        ]);
+
+        // Create Approval Policy for Memo
+        $policy = \App\Models\ApprovalPolicy::create([
+            'name' => 'Memo Approval Policy',
+            'model_type' => Memo::class,
+        ]);
+
+        \App\Models\ApprovalPolicyStep::create([
+            'approval_policy_id' => $policy->id,
+            'step_order' => 1,
+            'step_name' => 'Manager Approval',
+            'resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class,
+        ]);
+
+        $memo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $staffEmp->id,
+            'to_recipient' => 'Manager MESI',
+            'agenda' => 'Penugasan Pelatihan',
+            'content' => 'Isi memo penugasan pelatihan',
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($managerUser);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        // Test Livewire ReviewMemo page mount and approve
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\MemoResource\Pages\ReviewMemo::class, [
+            'record' => $memo->getKey(),
+        ])
+            ->assertSuccessful()
+            ->callAction('approve');
+
+        $memo->refresh();
+        $this->assertEquals('approved', $memo->status);
+
+        // Test rejection flow on another memo
+        $memo2 = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $staffEmp->id,
+            'to_recipient' => 'Manager MESI',
+            'agenda' => 'Penugasan Kedua',
+            'content' => 'Isi memo kedua',
+            'status' => 'pending',
+        ]);
+
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\MemoResource\Pages\ReviewMemo::class, [
+            'record' => $memo2->getKey(),
+        ])
+            ->assertSuccessful()
+            ->callAction('reject', ['notes' => 'Anggaran belum mencukupi']);
+
+        $memo2->refresh();
+        $this->assertEquals('rejected', $memo2->status);
+    }
+
+    public function test_memo_table_actions_shows_only_review_when_status_is_pending()
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+
+        $org = Organization::create(['name' => 'PT Pertamina Gas', 'code' => 'PGN']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'MESI', 'code' => 'MESI']);
+        $pos = Position::create(['name' => 'Staff MESI', 'code' => 'STF', 'level' => 4]);
+
+        $adminUser = \App\Models\User::factory()->create(['name' => 'Admin User']);
+        $adminUser->assignRole('Admin');
+
+        $emp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'user_id' => $adminUser->id,
+            'name' => 'Admin User',
+            'identity_number' => 'ADM-001',
+        ]);
+
+        $pendingMemo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $emp->id,
+            'to_recipient' => 'Manager MESI',
+            'agenda' => 'Pending Review Memo',
+            'content' => 'Content',
+            'status' => 'pending',
+        ]);
+
+        $approvedMemo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $emp->id,
+            'to_recipient' => 'Manager MESI',
+            'agenda' => 'Approved Memo',
+            'content' => 'Content',
+            'status' => 'approved',
+        ]);
+
+        $this->actingAs($adminUser);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\MemoResource\Pages\ListMemos::class)
+            ->assertSuccessful()
+            ->assertTableActionVisible('review', $pendingMemo)
+            ->assertTableActionHidden('print', $pendingMemo)
+            ->assertTableActionHidden('edit', $pendingMemo)
+            ->assertTableActionHidden('view_review', $pendingMemo)
+            ->assertTableActionHidden('review', $approvedMemo)
+            ->assertTableActionVisible('print', $approvedMemo)
+            ->assertTableActionVisible('view_review', $approvedMemo)
+            ->assertTableActionHidden('edit', $approvedMemo);
+    }
 }

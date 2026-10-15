@@ -179,6 +179,18 @@ class MemoResource extends Resource
                 //
             ])
             ->actions([
+                Tables\Actions\Action::make('review')
+                    ->label('Review')
+                    ->icon('heroicon-o-eye')
+                    ->color('warning')
+                    ->url(fn (Memo $record) => MemoResource::getUrl('review', ['record' => $record]))
+                    ->visible(fn (Memo $record) => $record->status === 'pending'),
+                Tables\Actions\Action::make('view_review')
+                    ->label('Lihat Review')
+                    ->icon('heroicon-o-document-magnifying-glass')
+                    ->color('gray')
+                    ->url(fn (Memo $record) => MemoResource::getUrl('review', ['record' => $record]))
+                    ->visible(fn (Memo $record) => $record->status !== 'pending'),
                 Tables\Actions\Action::make('print')
                     ->label('Cetak PDF')
                     ->icon('heroicon-o-printer')
@@ -187,7 +199,8 @@ class MemoResource extends Resource
                     ->openUrlInNewTab()
                     ->visible(fn (Memo $record) => $record->status === 'approved'),
                 Tables\Actions\EditAction::make()
-                    ->label('Ubah'),
+                    ->label('Ubah')
+                    ->visible(fn (Memo $record) => $record->status === 'draft'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -209,6 +222,7 @@ class MemoResource extends Resource
         return [
             'index' => Pages\ListMemos::route('/'),
             'create' => Pages\CreateMemo::route('/create'),
+            'review' => Pages\ReviewMemo::route('/{record}/review'),
             'edit' => Pages\EditMemo::route('/{record}/edit'),
         ];
     }

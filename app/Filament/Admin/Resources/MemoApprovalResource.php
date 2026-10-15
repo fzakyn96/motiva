@@ -79,6 +79,18 @@ class MemoApprovalResource extends Resource
                 //
             ])
             ->actions([
+                Tables\Actions\Action::make('review')
+                    ->label('Review & Persetujuan')
+                    ->icon('heroicon-o-eye')
+                    ->color('warning')
+                    ->url(fn (\App\Models\ApprovalRequest $record) => \App\Filament\Admin\Resources\MemoResource::getUrl('review', ['record' => $record->document_id]))
+                    ->visible(fn (\App\Models\ApprovalRequest $record) => $record->status === 'pending'),
+                Tables\Actions\Action::make('view_review')
+                    ->label('Lihat Review')
+                    ->icon('heroicon-o-document-magnifying-glass')
+                    ->color('gray')
+                    ->url(fn (\App\Models\ApprovalRequest $record) => \App\Filament\Admin\Resources\MemoResource::getUrl('review', ['record' => $record->document_id]))
+                    ->visible(fn (\App\Models\ApprovalRequest $record) => $record->status !== 'pending'),
                 Tables\Actions\Action::make('print')
                     ->label('Cetak PDF')
                     ->icon('heroicon-o-printer')
@@ -86,49 +98,6 @@ class MemoApprovalResource extends Resource
                     ->url(fn (\App\Models\ApprovalRequest $record) => route('memos.print', $record->document_id))
                     ->openUrlInNewTab()
                     ->visible(fn (\App\Models\ApprovalRequest $record) => $record->status === 'approved'),
-                Tables\Actions\Action::make('approve')
-                    ->label('Setujui')
-                    ->color('success')
-                    ->icon('heroicon-o-check')
-                    ->requiresConfirmation()
-                    ->modalHeading('Konfirmasi Persetujuan Memo')
-                    ->modalDescription('Apakah Anda yakin ingin menyetujui memo ini?')
-                    ->modalSubmitActionLabel('Ya, Setujui')
-                    ->modalCancelActionLabel('Batal')
-                    ->visible(fn (\App\Models\ApprovalRequest $record) => $record->status === 'pending')
-                    ->action(function (\App\Models\ApprovalRequest $record) {
-                        $user = auth()->user()->employee;
-                        $resolver = new \App\Services\Approval\ApprovalResolver();
-                        try {
-                            $resolver->approve($record, $user, 'Disetujui melalui Dashboard');
-                            \Filament\Notifications\Notification::make()->title('Memo Berhasil Disetujui')->success()->send();
-                        } catch (\Exception $e) {
-                            \Filament\Notifications\Notification::make()->title('Gagal Menyetujui Memo')->body($e->getMessage())->danger()->send();
-                        }
-                    }),
-                Tables\Actions\Action::make('reject')
-                    ->label('Tolak')
-                    ->color('danger')
-                    ->icon('heroicon-o-x-mark')
-                    ->requiresConfirmation()
-                    ->modalHeading('Tolak Pengajuan Memo')
-                    ->modalDescription('Masukkan alasan penolakan memo ini.')
-                    ->modalSubmitActionLabel('Tolak Memo')
-                    ->modalCancelActionLabel('Batal')
-                    ->visible(fn (\App\Models\ApprovalRequest $record) => $record->status === 'pending')
-                    ->form([
-                        Forms\Components\Textarea::make('notes')->required()->label('Alasan Penolakan'),
-                    ])
-                    ->action(function (\App\Models\ApprovalRequest $record, array $data) {
-                        $user = auth()->user()->employee;
-                        $resolver = new \App\Services\Approval\ApprovalResolver();
-                        try {
-                            $resolver->reject($record, $user, $data['notes']);
-                            \Filament\Notifications\Notification::make()->title('Memo Berhasil Ditolak')->success()->send();
-                        } catch (\Exception $e) {
-                            \Filament\Notifications\Notification::make()->title('Gagal Menolak Memo')->body($e->getMessage())->danger()->send();
-                        }
-                    }),
             ])
             ->bulkActions([
                 //
