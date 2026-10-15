@@ -187,6 +187,9 @@ class DomainMemoTest extends TestCase
             'record' => $memo->getKey(),
         ])
             ->assertSuccessful()
+            ->assertSee('MEMO')
+            ->assertDontSee('MEMORANDUM INTERNAL')
+            ->assertDontSee('Ditandatangani secara digital')
             ->callAction('approve');
 
         $memo->refresh();

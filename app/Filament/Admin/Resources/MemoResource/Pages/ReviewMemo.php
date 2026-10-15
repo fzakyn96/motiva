@@ -17,7 +17,7 @@ class ReviewMemo extends ViewRecord
 {
     protected static string $resource = MemoResource::class;
 
-    protected static ?string $title = 'Review Memo & Persetujuan';
+    protected static ?string $title = 'Review Memo';
 
     protected static string $view = 'filament.admin.resources.memo-resource.pages.review-memo';
 
