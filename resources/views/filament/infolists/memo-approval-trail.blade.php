@@ -4,6 +4,20 @@
         ->where('document_type', \App\Models\Memo::class)
         ->where('document_id', $record->id)
         ->first();
+
+    // Resolve Manager name for this memo
+    $manager = $record->creator?->manager;
+    if (! $manager && $record->department_id) {
+        $manager = \App\Models\Employee::where('department_id', $record->department_id)
+            ->whereHas('position', fn ($q) => $q->where('name', 'like', '%Manager%'))
+            ->first();
+    }
+    if (! $manager && $record->department_id) {
+        $manager = \App\Models\Employee::where('department_id', $record->department_id)
+            ->whereHas('user.roles', fn ($q) => $q->where('name', 'Manager'))
+            ->first();
+    }
+    $defaultManagerName = $manager ? $manager->name : 'Manajer';
 @endphp
 
 <div class="space-y-4">
@@ -25,6 +39,9 @@
 
     @if ($approvalRequest)
         @foreach ($approvalRequest->steps as $step)
+            @php
+                $pemeriksaName = $step->approver ? $step->approver->name : $defaultManagerName;
+            @endphp
             <div class="flex items-start gap-3">
                 @if ($step->status === 'approved')
                     <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
@@ -53,11 +70,7 @@
                         @endif
                     </div>
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                        @if ($step->approver)
-                            Pemeriksa: {{ $step->approver->name }} ({{ $step->approver->position?->name ?? 'Manajer' }})
-                        @else
-                            Pemeriksa: Manajer Unit Kerja Terkait
-                        @endif
+                        Pemeriksa: {{ $pemeriksaName }}
                         @if ($step->updated_at && $step->status !== 'pending')
                             &bull; {{ \Carbon\Carbon::parse($step->updated_at)->locale('id')->translatedFormat('d F Y, H:i') }} WIB
                         @endif

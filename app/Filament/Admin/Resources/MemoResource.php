@@ -75,22 +75,22 @@ class MemoResource extends Resource
 
                 Infolists\Components\Section::make('Informasi MEMO')
                     ->icon('heroicon-o-document-text')
-                    ->description('Detail penerima, pengaju, dan perihal memo.')
+                    // ->description('Detail penerima, pengaju, dan perihal memo.')
                     ->schema([
                         Infolists\Components\TextEntry::make('to_recipient')
-                            ->label('Kepada (Yth)')
+                            ->label('Kepada')
                             ->icon('heroicon-m-user')
                             ->weight('bold'),
                         Infolists\Components\TextEntry::make('creator.name')
-                            ->label('Dari (Pengaju)')
+                            ->label('Dari')
                             ->icon('heroicon-m-user-circle')
-                            ->weight('bold')
-                            ->helperText(fn (Memo $record) => $record->creator?->position?->name ? 'Jabatan: ' . $record->creator->position->name : null),
+                            ->weight('bold'),
+                            // ->helperText(fn (Memo $record) => $record->creator?->position?->name),
                         Infolists\Components\TextEntry::make('department.name')
-                            ->label('Unit Kerja / Departemen')
+                            ->label('Unit Kerja')
                             ->icon('heroicon-m-building-office-2'),
                         Infolists\Components\TextEntry::make('agenda')
-                            ->label('Perihal / Agenda')
+                            ->label('Agenda')
                             ->icon('heroicon-m-tag')
                             ->weight('bold')
                             ->color('primary'),
@@ -101,9 +101,9 @@ class MemoResource extends Resource
                     ])
                     ->columns(['default' => 1, 'sm' => 2]),
 
-                Infolists\Components\Section::make('Rincian Penugasan & Peserta')
+                Infolists\Components\Section::make('Rincian Penugasan')
                     ->icon('heroicon-o-briefcase')
-                    ->description('Informasi kegiatan tugas lapangan dan pegawai yang ditugaskan.')
+                    // ->description('Informasi kegiatan tugas lapangan dan pegawai yang ditugaskan.')
                     ->visible(fn (Memo $record) => $record->assignment_start_date || $record->location || !empty($record->participants))
                     ->schema([
                         Infolists\Components\TextEntry::make('assignment_period')
