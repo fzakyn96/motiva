@@ -17,20 +17,42 @@ class MemoApprovalResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-check';
     protected static ?string $navigationGroup = 'Persetujuan';
-    protected static ?string $navigationLabel = 'Memo';
+    protected static ?string $navigationLabel = 'Persetujuan Memo';
     protected static ?string $slug = 'memo-approvals';
     protected static ?string $modelLabel = 'Memo';
-    protected static ?string $pluralModelLabel = 'Memo';
+    protected static ?string $pluralModelLabel = 'Persetujuan Memo';
+    protected static ?int $navigationSort = 1;
+
+    public static function canViewAny(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) return false;
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'Manager', 'HR']);
+    }
 
     public static function getNavigationBadge(): ?string
     {
-        $count = static::getEloquentQuery()->where('status', 'pending')->count();
-        return $count > 0 ? (string) $count : null;
+        $pendingCount = static::getEloquentQuery()->where('status', 'pending')->count();
+        if ($pendingCount > 0) {
+            return (string) $pendingCount;
+        }
+
+        $totalCount = static::getEloquentQuery()->count();
+        return $totalCount > 0 ? (string) $totalCount : null;
     }
 
     public static function getNavigationBadgeColor(): ?string
     {
-        return 'warning';
+        return static::getEloquentQuery()->where('status', 'pending')->exists()
+            ? 'warning'
+            : 'success';
+    }
+
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return static::getEloquentQuery()->where('status', 'pending')->exists()
+            ? 'Menunggu Persetujuan Memo'
+            : 'Total Data Persetujuan Memo';
     }
 
     public static function getNavigationItems(): array
@@ -97,47 +119,69 @@ class MemoApprovalResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('document.nomor_memo')
-                    ->label('Nomor Memo')
-                    ->searchable()
-                    ->weight('bold'),
-                Tables\Columns\TextColumn::make('document.creator.name')
-                    ->label('Pengaju')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('document.agenda')
-                    ->label('Agenda')
-                    ->searchable()
-                    ->wrap(),
-                Tables\Columns\TextColumn::make('document.date')
-                    ->label('Tanggal Memo')
-                    ->date('d/m/Y'),
-                Tables\Columns\TextColumn::make('status')
-                    ->label('Status Persetujuan')
-                    ->sortable()
-                    ->badge()
-                    ->icon(fn (string $state): string => match ($state) {
-                        'pending' => 'heroicon-m-clock',
-                        'approved' => 'heroicon-m-check-circle',
-                        'rejected' => 'heroicon-m-x-circle',
-                        default => 'heroicon-m-question-mark-circle',
-                    })
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'pending' => 'Menunggu Persetujuan',
-                        'approved' => 'Disetujui',
-                        'rejected' => 'Ditolak',
-                        default => ucfirst($state),
-                    })
-                    ->color(fn (string $state): string => match ($state) {
-                        'pending' => 'warning',
-                        'approved' => 'success',
-                        'rejected' => 'danger',
-                        default => 'gray',
-                    }),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Diajukan Pada')
-                    ->dateTime('d/m/Y H:i')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\Layout\Split::make([
+                    Tables\Columns\TextColumn::make('document.agenda')
+                        ->label('Agenda')
+                        ->searchable()
+                        ->wrap()
+                        ->weight('bold'),
+                    Tables\Columns\TextColumn::make('status')
+                        ->label('Status Persetujuan')
+                        ->sortable()
+                        ->badge()
+                        ->grow(false)
+                        ->icon(fn (string $state): string => match ($state) {
+                            'pending' => 'heroicon-m-clock',
+                            'approved' => 'heroicon-m-check-circle',
+                            'rejected' => 'heroicon-m-x-circle',
+                            default => 'heroicon-m-question-mark-circle',
+                        })
+                        ->formatStateUsing(fn (string $state): string => match ($state) {
+                            'pending' => 'Menunggu Persetujuan',
+                            'approved' => 'Disetujui',
+                            'rejected' => 'Ditolak',
+                            default => ucfirst($state),
+                        })
+                        ->color(fn (string $state): string => match ($state) {
+                            'pending' => 'warning',
+                            'approved' => 'success',
+                            'rejected' => 'danger',
+                            default => 'gray',
+                        }),
+                ])->from('md'),
+
+                Tables\Columns\Layout\Panel::make([
+                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2, 'md' => 4])
+                        ->schema([
+                            Tables\Columns\TextColumn::make('document.nomor_memo')
+                                ->description('Nomor Memo', position: 'above')
+                                ->placeholder('Belum terbit'),
+                            Tables\Columns\TextColumn::make('document.creator.name')
+                                ->description('Pengaju (Dari)', position: 'above')
+                                ->placeholder('-'),
+                            Tables\Columns\TextColumn::make('document.to_recipient')
+                                ->description('Kepada', position: 'above')
+                                ->placeholder('-'),
+                            Tables\Columns\TextColumn::make('document.date')
+                                ->description('Tanggal Memo', position: 'above')
+                                ->date('d M Y'),
+                            Tables\Columns\TextColumn::make('dinas_period')
+                                ->description('Jadwal Penugasan Dinas', position: 'above')
+                                ->state(function (ApprovalRequest $record) {
+                                    $doc = $record->document;
+                                    if (! $doc || ! $doc->assignment_start_date) return '-';
+                                    $start = \Carbon\Carbon::parse($doc->assignment_start_date)->format('d M Y');
+                                    $end = $doc->assignment_end_date ? \Carbon\Carbon::parse($doc->assignment_end_date)->format('d M Y') : '-';
+                                    return "{$start} s/d {$end}";
+                                }),
+                            Tables\Columns\TextColumn::make('document.location')
+                                ->description('Tempat / Lokasi', position: 'above')
+                                ->placeholder('-'),
+                            Tables\Columns\TextColumn::make('created_at')
+                                ->description('Diajukan Pada', position: 'above')
+                                ->dateTime('d/m/Y H:i'),
+                        ]),
+                ])->collapsible(),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([

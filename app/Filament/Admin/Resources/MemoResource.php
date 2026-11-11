@@ -20,9 +20,11 @@ class MemoResource extends Resource
     protected static ?string $model = Memo::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
-    protected static ?string $navigationGroup = 'Alur Dokumen';
+    protected static ?string $navigationGroup = 'Dokumen';
+    protected static ?string $navigationLabel = 'Memo';
     protected static ?string $modelLabel = 'Memo';
     protected static ?string $pluralModelLabel = 'Memo';
+    protected static ?int $navigationSort = 1;
 
     public static function shouldRegisterNavigation(): bool
     {
@@ -31,12 +33,62 @@ class MemoResource extends Resource
             return false;
         }
 
-        // Managers only need "Persetujuan Memo", not the master "Memo" menu
-        if ($user->hasRole('Manager') && ! $user->hasRole(['Superadmin', 'Admin', 'HR'])) {
+        // Managers and Supervisors only need "Persetujuan Memo", not the master "Memo" menu
+        if ($user->hasAnyRole(['Manager', 'Supervisor']) && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
             return false;
         }
 
         return true;
+    }
+
+    public static function canViewAny(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->hasAnyRole(['Manager', 'Supervisor']) && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+            return false;
+        }
+
+        return parent::canViewAny();
+    }
+
+    public static function getNavigationBadge(): ?string
+    {
+        $count = static::getEloquentQuery()->count();
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'primary';
+    }
+
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return 'Total Dokumen Memo';
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+
+        if (! $user || $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+            return $query;
+        }
+
+        $employee = $user->employee;
+        if (! $employee) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $q) use ($employee) {
+            $q->where('creator_employee_id', $employee->id)
+                ->orWhere('department_id', $employee->department_id);
+        });
     }
 
     public static function getNavigationItems(): array
@@ -67,6 +119,7 @@ class MemoResource extends Resource
             ->schema([
                 Infolists\Components\Section::make('Status Dokumen')
                     ->icon('heroicon-o-shield-check')
+                    ->iconColor('primary')
                     ->schema([
                         Infolists\Components\TextEntry::make('status')
                             ->label('Status Pengajuan')
@@ -112,6 +165,7 @@ class MemoResource extends Resource
 
                 Infolists\Components\Section::make('Informasi MEMO')
                     ->icon('heroicon-o-document-text')
+                    ->iconColor('primary')
                     // ->description('Detail penerima, pengaju, dan perihal memo.')
                     ->schema([
                         Infolists\Components\TextEntry::make('to_recipient')
@@ -140,6 +194,7 @@ class MemoResource extends Resource
 
                 Infolists\Components\Section::make('Rincian Penugasan')
                     ->icon('heroicon-o-briefcase')
+                    ->iconColor('info')
                     // ->description('Informasi kegiatan tugas lapangan dan pegawai yang ditugaskan.')
                     ->visible(fn (Memo $record) => $record->assignment_start_date || $record->location || !empty($record->participants))
                     ->schema([
@@ -167,6 +222,7 @@ class MemoResource extends Resource
 
                 Infolists\Components\Section::make('Riwayat & Jejak Persetujuan')
                     ->icon('heroicon-o-clipboard-document-check')
+                    ->iconColor('success')
                     ->collapsible()
                     ->schema([
                         Infolists\Components\ViewEntry::make('approval_trail')
@@ -182,97 +238,144 @@ class MemoResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Detail Memo')
-                    ->description('Lengkapi rincian memo internal.')
+                    ->icon('heroicon-o-document-text')
+                    ->iconColor('primary')
+                    ->description('Lengkapi identitas tujuan, tanggal pembuatan, serta uraian isi memo internal.')
+                    ->collapsible()
                     ->schema([
                         Forms\Components\TextInput::make('nomor_memo')
                             ->label('Nomor Memo / Nota Dinas')
+                            ->prefixIcon('heroicon-m-hashtag')
                             ->disabled()
                             ->dehydrated(false)
-                            ->visible(fn (string $context): bool => $context === 'edit'),
+                            ->visible(fn (string $context): bool => $context === 'edit')
+                            ->columnSpanFull(),
                         Forms\Components\TextInput::make('to_recipient')
-                            ->label('Kepada')
+                            ->label('Kepada (Tujuan Memo)')
+                            ->prefixIcon('heroicon-m-user-group')
+                            ->placeholder('Contoh: Manajer Unit MESI / Seluruh Tim Proyek')
+                            ->helperText('Jabatan atau pihak penerima memo dinas.')
                             ->required()
                             ->maxLength(255),
                         Forms\Components\DatePicker::make('date')
                             ->label('Tanggal Memo Dibuat')
+                            ->prefixIcon('heroicon-m-calendar-days')
                             ->native(false)
                             ->displayFormat('d/m/Y')
                             ->closeOnDateSelection()
+                            ->helperText('Tanggal resmi penerbitan memo.')
                             ->required()
                             ->default(now()),
                         Forms\Components\RichEditor::make('content')
-                            ->label('Isi Memo')
+                            ->label('Uraian Isi Memo')
+                            ->placeholder('Tuliskan latar belakang, maksud, dan rincian isi memo...')
+                            ->toolbarButtons([
+                                'bold',
+                                'italic',
+                                'underline',
+                                'strike',
+                                'h2',
+                                'h3',
+                                'bulletList',
+                                'orderedList',
+                                'blockquote',
+                                'undo',
+                                'redo',
+                            ])
                             ->required()
                             ->columnSpanFull(),
                     ])
                     ->columns(['default' => 1, 'md' => 2]),
 
-                Forms\Components\Section::make('Detail Penugasan')
-                    ->description('Isi bagian ini jika memo berisi penugasan.')
+                Forms\Components\Section::make('Detail Penugasan Perjalanan Dinas')
+                    ->icon('heroicon-o-briefcase')
+                    ->iconColor('info')
+                    ->description('Lengkapi jadwal, agenda, lokasi kegiatan, dan daftar peserta yang ditugaskan.')
+                    ->collapsible()
                     ->schema([
-                        Forms\Components\DatePicker::make('assignment_start_date')
-                            ->label('Tanggal Mulai Penugasan')
-                            ->native(false)
-                            ->displayFormat('d/m/Y')
-                            ->closeOnDateSelection(),
-                        Forms\Components\DatePicker::make('assignment_end_date')
-                            ->label('Tanggal Selesai Penugasan')
-                            ->native(false)
-                            ->displayFormat('d/m/Y')
-                            ->closeOnDateSelection(),
-                        Forms\Components\TextInput::make('agenda')
-                            ->label('Agenda')
-                            ->maxLength(255),
-                        Forms\Components\TextInput::make('location')
-                            ->label('Tempat / Lokasi')
-                            ->maxLength(255),
-                        Forms\Components\Select::make('participants')
-                            ->label('Peserta Penugasan')
-                            ->multiple()
-                            ->searchable()
-                            ->preload()
-                            ->options(function () {
-                                $user = auth()->user();
+                        Forms\Components\Fieldset::make('Agenda & Lokasi Kegiatan')
+                            ->schema([
+                                Forms\Components\TextInput::make('agenda')
+                                    ->label('Agenda Kegiatan')
+                                    ->prefixIcon('heroicon-m-clipboard-document-list')
+                                    ->placeholder('Contoh: Sinkronisasi Data Aset & Inspeksi Lapangan')
+                                    ->maxLength(255),
+                                Forms\Components\TextInput::make('location')
+                                    ->label('Tempat / Lokasi Tujuan')
+                                    ->prefixIcon('heroicon-m-map-pin')
+                                    ->placeholder('Contoh: Surabaya / Area Operasi Lampung')
+                                    ->maxLength(255),
+                            ])
+                            ->columns(['default' => 1, 'md' => 2]),
 
-                                if ($user && ($user->hasRole('Superadmin') || $user->hasRole('Admin'))) {
-                                    return \App\Models\Employee::with('department')
-                                        ->get()
-                                        ->mapWithKeys(function ($emp) {
-                                            $unit = $emp->department?->name ?? 'Tanpa Unit';
-                                            return [$emp->id => "{$emp->name} ({$emp->identity_number}) - {$unit}"];
-                                        });
-                                }
+                        Forms\Components\Fieldset::make('Rentang Waktu & Peserta Penugasan')
+                            ->schema([
+                                Forms\Components\DatePicker::make('assignment_start_date')
+                                    ->label('Tanggal Mulai Penugasan')
+                                    ->prefixIcon('heroicon-m-calendar')
+                                    ->native(false)
+                                    ->displayFormat('d/m/Y')
+                                    ->closeOnDateSelection()
+                                    ->placeholder('Pilih tanggal mulai'),
+                                Forms\Components\DatePicker::make('assignment_end_date')
+                                    ->label('Tanggal Selesai Penugasan')
+                                    ->prefixIcon('heroicon-m-calendar')
+                                    ->native(false)
+                                    ->displayFormat('d/m/Y')
+                                    ->closeOnDateSelection()
+                                    ->placeholder('Pilih tanggal selesai'),
+                                Forms\Components\Select::make('participants')
+                                    ->label('Peserta Penugasan')
+                                    ->prefixIcon('heroicon-m-users')
+                                    ->multiple()
+                                    ->searchable()
+                                    ->preload()
+                                    ->placeholder('Pilih satu atau lebih pegawai yang ditugaskan...')
+                                    ->options(function () {
+                                        $user = auth()->user();
 
-                                $myEmployee = $user?->employee;
-                                $departmentId = $myEmployee?->department_id;
+                                        if ($user && ($user->hasRole('Superadmin') || $user->hasRole('Admin'))) {
+                                            return \App\Models\Employee::with('department')
+                                                ->get()
+                                                ->mapWithKeys(function ($emp) {
+                                                    $unit = $emp->department?->name ?? 'Tanpa Unit';
+                                                    return [$emp->id => "{$emp->name} ({$emp->identity_number}) - {$unit}"];
+                                                });
+                                        }
 
-                                if (! $departmentId) {
-                                    return \App\Models\Employee::with('department')
-                                        ->get()
-                                        ->mapWithKeys(fn ($e) => [$e->id => "{$e->name} ({$e->identity_number})"]);
-                                }
+                                        $myEmployee = $user?->employee;
+                                        $departmentId = $myEmployee?->department_id;
 
-                                return \App\Models\Employee::where('department_id', $departmentId)
-                                    ->get()
-                                    ->mapWithKeys(function ($emp) {
-                                        return [$emp->id => "{$emp->name} ({$emp->identity_number})"];
-                                    });
-                            })
-                            ->helperText(function () {
-                                $user = auth()->user();
-                                if ($user && ($user->hasRole('Superadmin') || $user->hasRole('Admin'))) {
-                                    return 'Super Admin dapat memilih peserta dari semua unit kerja.';
-                                }
-                                $unitName = $user?->employee?->department?->name;
-                                return $unitName
-                                    ? "HR Unit {$unitName}: Hanya dapat memilih peserta dari unit {$unitName}."
-                                    : 'Pilih pegawai yang ditugaskan.';
-                            })
-                            ->columnSpanFull(),
+                                        if (! $departmentId) {
+                                            return \App\Models\Employee::with('department')
+                                                ->get()
+                                                ->mapWithKeys(fn ($e) => [$e->id => "{$e->name} ({$e->identity_number})"]);
+                                        }
+
+                                        return \App\Models\Employee::where('department_id', $departmentId)
+                                            ->get()
+                                            ->mapWithKeys(function ($emp) {
+                                                return [$emp->id => "{$emp->name} ({$emp->identity_number})"];
+                                            });
+                                    })
+                                    ->helperText(function () {
+                                        $user = auth()->user();
+                                        if ($user && ($user->hasRole('Superadmin') || $user->hasRole('Admin'))) {
+                                            return 'Super Admin dapat memilih peserta dari semua unit kerja.';
+                                        }
+                                        $unitName = $user?->employee?->department?->name;
+                                        return $unitName
+                                            ? "Unit {$unitName}: Menampilkan daftar pegawai dari unit kerja {$unitName}."
+                                            : 'Pilih pegawai yang ditugaskan dalam perjalanan dinas ini.';
+                                    })
+                                    ->columnSpanFull(),
+                            ])
+                            ->columns(['default' => 1, 'md' => 2]),
+
                         Forms\Components\Hidden::make('status')
                             ->default('pending'),
                     ])
-                    ->columns(['default' => 1, 'md' => 2]),
+                    ->columns(1),
             ]);
     }
 
@@ -280,55 +383,66 @@ class MemoResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('nomor_memo')
-                    ->label('Nomor Memo')
-                    ->sortable()
-                    ->searchable()
-                    ->weight('bold'),
-                Tables\Columns\TextColumn::make('department.name')
-                    ->label('Departemen')
-                    ->sortable()
-                    ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('to_recipient')
-                    ->label('Kepada')
-                    ->sortable()
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('creator.name')
-                    ->label('Dari')
-                    ->sortable()
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('agenda')
-                    ->label('Agenda')
-                    ->searchable()
-                    ->weight('bold')
-                    ->wrap(),
-                Tables\Columns\TextColumn::make('date')
-                    ->label('Tanggal')
-                    ->date('d/m/Y')
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('status')
-                    ->label('Status')
-                    ->badge()
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'draft' => 'Draf',
-                        'pending' => 'Menunggu Persetujuan',
-                        'approved' => 'Disetujui',
-                        'rejected' => 'Ditolak',
-                        default => ucfirst($state),
-                    })
-                    ->color(fn (string $state): string => match ($state) {
-                        'draft' => 'gray',
-                        'pending' => 'warning',
-                        'approved' => 'success',
-                        'rejected' => 'danger',
-                        default => 'gray',
-                    }),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Dibuat Pada')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\Layout\Split::make([
+                    Tables\Columns\TextColumn::make('agenda')
+                        ->label('Agenda')
+                        ->searchable()
+                        ->weight('bold')
+                        ->wrap(),
+                    Tables\Columns\TextColumn::make('status')
+                        ->label('Status')
+                        ->badge()
+                        ->grow(false)
+                        ->formatStateUsing(fn (string $state): string => match ($state) {
+                            'draft' => 'Draf',
+                            'pending' => 'Menunggu Persetujuan',
+                            'approved' => 'Disetujui',
+                            'rejected' => 'Ditolak',
+                            default => ucfirst($state),
+                        })
+                        ->color(fn (string $state): string => match ($state) {
+                            'draft' => 'gray',
+                            'pending' => 'warning',
+                            'approved' => 'success',
+                            'rejected' => 'danger',
+                            default => 'gray',
+                        }),
+                ])->from('md'),
+
+                Tables\Columns\Layout\Panel::make([
+                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2, 'md' => 4])
+                        ->schema([
+                            Tables\Columns\TextColumn::make('nomor_memo')
+                                ->description('Nomor Memo', position: 'above')
+                                ->placeholder('Belum terbit (Draf)'),
+                            Tables\Columns\TextColumn::make('creator.name')
+                                ->description('Dari (Pengaju)', position: 'above')
+                                ->placeholder('-'),
+                            Tables\Columns\TextColumn::make('to_recipient')
+                                ->description('Kepada', position: 'above')
+                                ->placeholder('-'),
+                            Tables\Columns\TextColumn::make('date')
+                                ->description('Tanggal Memo', position: 'above')
+                                ->date('d M Y'),
+                            Tables\Columns\TextColumn::make('dinas_period')
+                                ->description('Jadwal Penugasan Dinas', position: 'above')
+                                ->state(function (Memo $record) {
+                                    if (! $record->assignment_start_date) return '-';
+                                    $start = \Carbon\Carbon::parse($record->assignment_start_date)->format('d M Y');
+                                    $end = $record->assignment_end_date ? \Carbon\Carbon::parse($record->assignment_end_date)->format('d M Y') : '-';
+                                    return "{$start} s/d {$end}";
+                                }),
+                            Tables\Columns\TextColumn::make('location')
+                                ->description('Tempat / Lokasi', position: 'above')
+                                ->placeholder('-'),
+                            Tables\Columns\TextColumn::make('department.name')
+                                ->description('Departemen', position: 'above')
+                                ->placeholder('-'),
+                            Tables\Columns\TextColumn::make('created_at')
+                                ->description('Dibuat Pada', position: 'above')
+                                ->dateTime('d/m/Y H:i'),
+                        ]),
+                ])->collapsible(),
             ])
             ->filters([
                 //
@@ -361,6 +475,7 @@ class MemoResource extends Resource
                     ->visible(fn (Memo $record) => $record->status === 'approved'),
                 Tables\Actions\EditAction::make()
                     ->label('Ubah')
+                    ->icon('heroicon-o-pencil-square')
                     ->button()
                     ->size('sm')
                     ->visible(fn (Memo $record) => $record->status === 'draft'),
@@ -368,7 +483,8 @@ class MemoResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->label('Hapus Terpilih'),
+                        ->label('Hapus Terpilih')
+                        ->icon('heroicon-o-trash'),
                 ]),
             ]);
     }

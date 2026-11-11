@@ -38,7 +38,7 @@ class MemoOverviewWidget extends BaseWidget
                 ->url(MemoApprovalResource::getUrl('index', ['activeTab' => 'pending'])),
 
             Stat::make('Disetujui', $approvedCount)
-                ->description('Memo resmi yang telah disahkan')
+                ->description('Pengajuan memo disetujui')
                 ->descriptionIcon('heroicon-m-check-badge')
                 ->color('success')
                 ->url(MemoApprovalResource::getUrl('index', ['activeTab' => 'approved'])),
@@ -50,7 +50,7 @@ class MemoOverviewWidget extends BaseWidget
                 ->url(MemoApprovalResource::getUrl('index', ['activeTab' => 'rejected'])),
 
             Stat::make('Total Pengajuan', $totalCount)
-                ->description('Total riwayat memo unit terkait')
+                ->description('Total pengajuan memo')
                 ->descriptionIcon('heroicon-m-document-duplicate')
                 ->color('primary')
                 ->url(MemoApprovalResource::getUrl('index', ['activeTab' => 'all'])),

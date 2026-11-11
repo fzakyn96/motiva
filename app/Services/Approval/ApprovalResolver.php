@@ -53,10 +53,24 @@ class ApprovalResolver
                 'notes' => $notes
             ]);
 
-            // If this was the last step, mark request as approved
+            // If this was the last step, mark request as approved and update the underlying document
             $nextStep = $request->currentStep();
             if (!$nextStep) {
                 $request->update(['status' => 'approved']);
+                if ($request->document && method_exists($request->document, 'update')) {
+                    $request->document->update(['status' => 'approved']);
+                }
+            }
+
+            if ($request->document && $approver->user && $approver->user->hasConfiguredSignature()) {
+                $roleType = $nextStep ? 'supervisor' : 'manager';
+                app(\App\Services\Signature\SignatureService::class)->signDocument(
+                    $request->document,
+                    $approver,
+                    $roleType,
+                    $notes,
+                    $approver->user
+                );
             }
 
             return true;
@@ -82,6 +96,9 @@ class ApprovalResolver
             ]);
 
             $request->update(['status' => 'rejected']);
+            if ($request->document && method_exists($request->document, 'update')) {
+                $request->document->update(['status' => 'rejected']);
+            }
 
             return true;
         });

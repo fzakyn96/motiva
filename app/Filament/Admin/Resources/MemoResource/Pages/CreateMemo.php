@@ -17,9 +17,11 @@ class CreateMemo extends CreateRecord
     {
         return [
             $this->getCreateFormAction()
-                ->label('Simpan'),
+                ->label('Simpan')
+                ->icon('heroicon-o-check'),
             $this->getCancelFormAction()
-                ->label('Batal'),
+                ->label('Batal')
+                ->icon('heroicon-o-arrow-left'),
         ];
     }
 

@@ -37,5 +37,27 @@ class SimulationSeeder extends Seeder
         \App\Models\ApprovalPolicyStep::firstOrCreate(['approval_policy_id' => $policy->id, 'step_order' => 1], [
             'resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class
         ]);
+
+        // SPPD Approval Policy: Step 1 (Supervisor) -> Step 2 (Manager)
+        $sppdPolicy = \App\Models\ApprovalPolicy::firstOrCreate(['model_type' => \App\Models\Sppd::class], [
+            'name' => 'SPPD Default Policy'
+        ]);
+
+        \App\Models\ApprovalPolicyStep::firstOrCreate(['approval_policy_id' => $sppdPolicy->id, 'step_order' => 1], [
+            'resolver_class' => \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class
+        ]);
+
+        \App\Models\ApprovalPolicyStep::firstOrCreate(['approval_policy_id' => $sppdPolicy->id, 'step_order' => 2], [
+            'resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class
+        ]);
+
+        // Reimbursement Approval Policy: Step 1 (Manager)
+        $reimbPolicy = \App\Models\ApprovalPolicy::firstOrCreate(['model_type' => \App\Models\Reimbursement::class], [
+            'name' => 'Reimbursement Default Policy'
+        ]);
+
+        \App\Models\ApprovalPolicyStep::firstOrCreate(['approval_policy_id' => $reimbPolicy->id, 'step_order' => 1], [
+            'resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class
+        ]);
     }
 }

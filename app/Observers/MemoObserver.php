@@ -59,8 +59,18 @@ class MemoObserver
      */
     public function created(Memo $memo): void
     {
-        $policy = \App\Models\ApprovalPolicy::where('model_type', \App\Models\Memo::class)->first();
-        
+        $policy = \App\Models\ApprovalPolicy::firstOrCreate(
+            ['model_type' => \App\Models\Memo::class],
+            ['name' => 'Memo Default Policy']
+        );
+
+        \App\Models\ApprovalPolicyStep::firstOrCreate(
+            ['approval_policy_id' => $policy->id, 'step_order' => 1],
+            ['resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class]
+        );
+
+        $policy->refresh();
+
         if ($policy) {
             $request = \App\Models\ApprovalRequest::create([
                 'document_type' => \App\Models\Memo::class,
@@ -79,7 +89,10 @@ class MemoObserver
             }
         }
 
-        $this->generateSppdForParticipants($memo);
+        // Hanya generate SPPD jika memo langsung berstatus approved (misal seeder/manual)
+        if ($memo->status === 'approved') {
+            $this->generateSppdForParticipants($memo);
+        }
     }
 
     /**
@@ -87,11 +100,15 @@ class MemoObserver
      */
     public function updated(Memo $memo): void
     {
-        $this->generateSppdForParticipants($memo);
+        // Hanya generate SPPD kepada peserta penugasan ketika memo telah disetujui manajer
+        if ($memo->status === 'approved') {
+            $this->generateSppdForParticipants($memo);
+        }
     }
 
     /**
-     * Otomatis membuat BusinessTrip dan SPPD perorangan bagi setiap pegawai yang ditugaskan.
+     * Otomatis membuat BusinessTrip dan SPPD perorangan bagi setiap pegawai yang ditugaskan
+     * hanya setelah memo resmi disetujui manajer.
      */
     protected function generateSppdForParticipants(Memo $memo): void
     {
@@ -124,10 +141,12 @@ class MemoObserver
 
         // 2. Buat SPPD unik untuk setiap peserta yang ditugaskan
         foreach ($participants as $participant) {
-            $employee = is_numeric($participant)
-                ? \App\Models\Employee::find($participant)
-                : \App\Models\Employee::where('name', $participant)
-                    ->orWhere('identity_number', $participant)
+            $employeeId = is_array($participant) ? ($participant['employee_id'] ?? null) : $participant;
+
+            $employee = is_numeric($employeeId)
+                ? \App\Models\Employee::find($employeeId)
+                : \App\Models\Employee::where('name', $employeeId)
+                    ->orWhere('identity_number', $employeeId)
                     ->first();
 
             if (! $employee) {
@@ -149,11 +168,35 @@ class MemoObserver
                     $sppdNumber = "{$seq}/SPPD/{$deptCode}/{$month}/{$year}-" . $employee->id;
                 }
 
+                $startDate = $memo->assignment_start_date;
+                $endDate = $memo->assignment_end_date ?? $memo->assignment_start_date;
+                $totalDays = null;
+                if ($startDate) {
+                    $totalDays = $endDate
+                        ? \Carbon\Carbon::parse($startDate)->diffInDays(\Carbon\Carbon::parse($endDate)) + 1
+                        : 1;
+                }
+
                 \App\Models\Sppd::create([
                     'business_trip_id' => $trip->id,
                     'employee_id' => $employee->id,
                     'sppd_number' => $sppdNumber,
                     'status' => 'draft',
+                    'departure_date' => $startDate,
+                    'departure_time' => '08:00',
+                    'return_date' => $endDate,
+                    'return_time' => '17:00',
+                    'total_days' => $totalDays,
+                    'origin_location' => $employee->area ?? 'Jakarta',
+                    'destination_location' => $memo->location,
+                    'assignment_purpose' => $memo->agenda ?? $memo->title,
+                    'travel_category' => 'Dalam Negeri',
+                    'general_travel_type' => 'Kunjungan Dinas Umum/Rapat Dinas/Dinas Survei *)',
+                    'special_travel_type' => '≥ 80km dan menginap',
+                    'transport_departure' => 'Sendiri',
+                    'transport_arrival' => 'Kendaraan Dinas/Operasional',
+                    'transportation_mode' => 'KA',
+                    'destination_transportation' => ['Penugasan = Penginapan', 'Kendaraan Dinas/Operasional'],
                 ]);
             }
         }

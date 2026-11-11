@@ -47,16 +47,16 @@ class MemoPrintController extends Controller
                 ->first();
         }
 
-        $deptName = $memo->department?->name ?? '';
-        $posName = $manager?->position?->name;
+        $managerTitle = $manager?->position?->name ?? 'Manajer';
 
-        if ($posName && ! str_contains(strtolower($posName), 'general') && ! str_contains(strtolower($posName), 'staff')) {
-            $managerTitle = $posName . ($deptName ? ' ' . $deptName : '');
-        } else {
-            $managerTitle = 'Manajer ' . ($deptName ?: 'Unit Kerja');
-        }
+        $signatureRender = app(\App\Services\Signature\SignatureService::class)->resolveRenderData(
+            $memo,
+            $manager,
+            'manager',
+            $memo->status === 'approved'
+        );
 
-        $pdf = Pdf::loadView('memos.print', compact('memo', 'manager', 'managerTitle'));
+        $pdf = Pdf::loadView('memos.print', compact('memo', 'manager', 'managerTitle', 'signatureRender'));
 
         $filename = 'Memo-' . str_replace('/', '-', $memo->nomor_memo ?? $memo->id) . '.pdf';
 

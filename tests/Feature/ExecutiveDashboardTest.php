@@ -1,0 +1,282 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Filament\Admin\Pages\Dashboard;
+use App\Filament\Admin\Widgets\DashboardWelcomeBannerWidget;
+use App\Filament\Admin\Widgets\ExecutiveCostSummaryWidget;
+use App\Filament\Admin\Widgets\ExecutiveOverviewWidget;
+use App\Filament\Admin\Widgets\ExecutivePendingApprovalsWidget;
+use App\Filament\Admin\Widgets\ExecutivePipelineChartWidget;
+use App\Filament\Admin\Widgets\ExecutiveRecentTripsWidget;
+use App\Filament\Admin\Widgets\StaffOverviewWidget;
+use App\Filament\Admin\Widgets\StaffRecentTripsWidget;
+use App\Models\BusinessTrip;
+use App\Models\Department;
+use App\Models\Employee;
+use App\Models\Expense;
+use App\Models\Memo;
+use App\Models\Organization;
+use App\Models\Position;
+use App\Models\Reimbursement;
+use App\Models\Sppd;
+use App\Models\SppdCost;
+use App\Models\User;
+use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
+use Tests\TestCase;
+
+class ExecutiveDashboardTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected Organization $org;
+    protected Department $dept;
+    protected Position $managerPos;
+    protected Position $supervisorPos;
+    protected Position $staffPos;
+    protected User $managerUser;
+    protected Employee $manager;
+    protected User $supervisorUser;
+    protected Employee $supervisor;
+    protected User $staffUser;
+    protected Employee $staff;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        $this->org = Organization::create(['name' => 'PT Permata Karya Jasa', 'code' => 'PKJ']);
+        $this->dept = Department::create(['organization_id' => $this->org->id, 'name' => 'MESI', 'code' => 'MESI']);
+        $this->managerPos = Position::create(['name' => 'Manager MESI', 'code' => 'MGR', 'level' => 1]);
+        $this->supervisorPos = Position::create(['name' => 'Supervisor MESI', 'code' => 'SPV', 'level' => 2]);
+        $this->staffPos = Position::create(['name' => 'Staff Lapangan', 'code' => 'STF', 'level' => 3]);
+
+        // Manager
+        $this->managerUser = User::factory()->create(['name' => 'Bapak Manager']);
+        $this->managerUser->assignRole('Manager');
+        $this->manager = Employee::create([
+            'organization_id' => $this->org->id,
+            'department_id' => $this->dept->id,
+            'position_id' => $this->managerPos->id,
+            'user_id' => $this->managerUser->id,
+            'name' => 'Bapak Manager',
+            'identity_number' => 'MGR-001',
+        ]);
+
+        // Supervisor
+        $this->supervisorUser = User::factory()->create(['name' => 'Bapak Supervisor']);
+        $this->supervisorUser->assignRole('Supervisor');
+        $this->supervisor = Employee::create([
+            'organization_id' => $this->org->id,
+            'department_id' => $this->dept->id,
+            'position_id' => $this->supervisorPos->id,
+            'user_id' => $this->supervisorUser->id,
+            'manager_id' => $this->manager->id,
+            'name' => 'Bapak Supervisor',
+            'identity_number' => 'SPV-001',
+        ]);
+
+        // Staff
+        $this->staffUser = User::factory()->create(['name' => 'Rian Traveler']);
+        $this->staffUser->assignRole('Staff');
+        $this->staff = Employee::create([
+            'organization_id' => $this->org->id,
+            'department_id' => $this->dept->id,
+            'position_id' => $this->staffPos->id,
+            'user_id' => $this->staffUser->id,
+            'manager_id' => $this->supervisor->id,
+            'name' => 'Rian Traveler',
+            'identity_number' => 'STF-001',
+        ]);
+    }
+
+    public function test_manager_can_render_executive_dashboard_and_widgets(): void
+    {
+        $this->actingAs($this->managerUser);
+
+        Livewire::test(Dashboard::class)
+            ->assertSuccessful();
+
+        Livewire::test(ExecutiveOverviewWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Antrian Persetujuan')
+            ->assertSee('Perjalanan Dinas (SPPD)')
+            ->assertSee('Realisasi Biaya SPPD')
+            ->assertSee('Klaim Reimbursement');
+
+        Livewire::test(ExecutivePendingApprovalsWidget::class)
+            ->assertSuccessful();
+
+        Livewire::test(ExecutiveCostSummaryWidget::class)
+            ->assertSuccessful();
+
+        Livewire::test(ExecutivePipelineChartWidget::class)
+            ->assertSuccessful();
+
+        Livewire::test(DashboardWelcomeBannerWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Bapak Manager');
+
+        Livewire::test(ExecutiveRecentTripsWidget::class)
+            ->assertSuccessful();
+    }
+
+    public function test_staff_can_render_personal_dashboard_and_widgets(): void
+    {
+        $this->actingAs($this->staffUser);
+
+        Livewire::test(Dashboard::class)
+            ->assertSuccessful();
+
+        Livewire::test(DashboardWelcomeBannerWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Rian Traveler');
+
+        Livewire::test(StaffOverviewWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Memo Penugasan Saya')
+            ->assertSee('SPPD Saya')
+            ->assertSee('Klaim Reimbursement Saya')
+            ->assertSee('Tanda Tangan Digital');
+
+        Livewire::test(StaffRecentTripsWidget::class)
+            ->assertSuccessful();
+    }
+
+    public function test_supervisor_can_render_executive_dashboard_and_widgets(): void
+    {
+        $this->actingAs($this->supervisorUser);
+
+        Livewire::test(Dashboard::class)
+            ->assertSuccessful();
+
+        Livewire::test(ExecutiveOverviewWidget::class)
+            ->assertSuccessful();
+
+        Livewire::test(ExecutivePendingApprovalsWidget::class)
+            ->assertSuccessful();
+    }
+
+    public function test_hr_can_render_executive_dashboard_and_widgets(): void
+    {
+        $hrUser = User::factory()->create(['name' => 'Ibu HRD']);
+        $hrUser->assignRole('HR');
+
+        $this->actingAs($hrUser);
+
+        Livewire::test(Dashboard::class)
+            ->assertSuccessful();
+
+        Livewire::test(DashboardWelcomeBannerWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Ibu HRD')
+            ->assertSee('Hitung Biaya SPPD');
+
+        Livewire::test(ExecutiveOverviewWidget::class)
+            ->assertSuccessful();
+
+        Livewire::test(ExecutivePipelineChartWidget::class)
+            ->assertSuccessful();
+
+        Livewire::test(ExecutiveRecentTripsWidget::class)
+            ->assertSuccessful();
+    }
+
+    public function test_executive_dashboard_reflects_full_pipeline_metrics(): void
+    {
+        $this->actingAs($this->managerUser);
+
+        // 1. Memo Pending
+        $memo = Memo::create([
+            'creator_employee_id' => $this->staff->id,
+            'department_id' => $this->dept->id,
+            'title' => 'Memo Proyek Cilegon',
+            'content' => 'Rincian penugasan dinas proyek di Cilegon.',
+            'date' => '2026-11-01',
+            'status' => 'pending',
+            'total_travelers' => 2,
+        ]);
+
+        // 2. Business Trip & SPPD Approved with Cost
+        $trip = BusinessTrip::create([
+            'memo_id' => $memo->id,
+            'activity_name' => 'Site Commissioning Cilegon',
+            'destination' => 'Cilegon',
+            'start_date' => '2026-11-02',
+            'end_date' => '2026-11-05',
+        ]);
+
+        $sppd = Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $this->staff->id,
+            'sppd_number' => '001/SPPD/MESI/11/2026',
+            'status' => 'approved',
+            'total_days' => 4,
+        ]);
+
+        SppdCost::create([
+            'sppd_id' => $sppd->id,
+            'base_type' => 'office_base_stay',
+            'official_days' => 4,
+            'subtotal_transport' => 500000,
+            'subtotal_per_diem' => 1500000,
+            'subtotal_other' => 200000,
+            'total_cost' => 2200000,
+        ]);
+
+        // 3. Reimbursement Pending & Approved
+        $reimbPending = Reimbursement::create([
+            'employee_id' => $this->staff->id,
+            'sppd_id' => $sppd->id,
+            'title' => 'Reimbursement Bensin Tol',
+            'status' => 'pending',
+        ]);
+        Expense::create([
+            'reimbursement_id' => $reimbPending->id,
+            'expense_type' => 'Bahan Bakar & Tol',
+            'amount' => 350000,
+            'is_company_paid' => false,
+        ]);
+        $reimbPending->recalculateTotals();
+
+        $reimbApproved = Reimbursement::create([
+            'employee_id' => $this->staff->id,
+            'sppd_id' => $sppd->id,
+            'title' => 'Reimbursement Parkir & Konsumsi',
+            'status' => 'approved',
+        ]);
+        Expense::create([
+            'reimbursement_id' => $reimbApproved->id,
+            'expense_type' => 'Parkir & Retribusi',
+            'amount' => 150000,
+            'is_company_paid' => false,
+        ]);
+        $reimbApproved->recalculateTotals();
+
+        // Verifikasi Overview Widget
+        Livewire::test(ExecutiveOverviewWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Rp 2.200.000') // Biaya SPPD
+            ->assertSee('Rp 150.000'); // Klaim Reimbursement Approved
+
+        // Verifikasi Pending Approvals Table Widget
+        Livewire::test(ExecutivePendingApprovalsWidget::class)
+            ->assertSuccessful()
+            ->assertDontSee('Nilai Biaya / Klaim')
+            ->assertSee('Memo Proyek Cilegon')
+            ->assertSee('Reimbursement Bensin Tol')
+            ->assertSee('Rian Traveler');
+
+        // Verifikasi Recent Trips Table Widget
+        Livewire::test(ExecutiveRecentTripsWidget::class)
+            ->assertSuccessful()
+            ->assertSee('001/SPPD/MESI/11/2026')
+            ->assertSee('Cilegon')
+            ->assertSee('Rp 2.200.000');
+    }
+}

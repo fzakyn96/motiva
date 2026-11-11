@@ -16,7 +16,8 @@ class EditMemo extends EditRecord
     {
         return [
             Actions\DeleteAction::make()
-                ->label('Hapus'),
+                ->label('Hapus')
+                ->icon('heroicon-o-trash'),
         ];
     }
 
@@ -24,9 +25,11 @@ class EditMemo extends EditRecord
     {
         return [
             $this->getSaveFormAction()
-                ->label('Simpan'),
+                ->label('Simpan')
+                ->icon('heroicon-o-check'),
             $this->getCancelFormAction()
-                ->label('Batal'),
+                ->label('Batal')
+                ->icon('heroicon-o-arrow-left'),
         ];
     }
 

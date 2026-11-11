@@ -63,7 +63,7 @@ class DomainMemoTest extends TestCase
         $this->assertEquals($employee->id, $sppd->employee->id);
     }
 
-    public function test_creating_memo_with_participants_automatically_generates_sppd_for_each_participant()
+    public function test_sppd_is_only_generated_after_memo_is_approved_by_manager()
     {
         $org = Organization::create(['name' => 'PT Test', 'code' => 'TEST']);
         $dept = Department::create(['organization_id' => $org->id, 'name' => 'MESI', 'code' => 'MESI']);
@@ -85,6 +85,7 @@ class DomainMemoTest extends TestCase
             'identity_number' => 'EMP-002',
         ]);
 
+        // 1. Memo dibuat dengan status pending
         $memo = Memo::create([
             'department_id' => $dept->id,
             'creator_employee_id' => $employee1->id,
@@ -99,7 +100,13 @@ class DomainMemoTest extends TestCase
             'status' => 'pending',
         ]);
 
-        // Assert BusinessTrip created
+        // Sebelum disetujui, SPPD TIDAK BOLEH dibuat
+        $this->assertEquals(0, Sppd::count());
+
+        // 2. Manajer menyetujui memo
+        $memo->update(['status' => 'approved']);
+
+        // Setelah disetujui, BusinessTrip dan SPPD otomatis tergenerate untuk setiap peserta
         $this->assertDatabaseHas('business_trips', [
             'memo_id' => $memo->id,
             'activity_name' => 'Site Audit Penugasan',
@@ -109,7 +116,7 @@ class DomainMemoTest extends TestCase
         $trip = BusinessTrip::where('memo_id', $memo->id)->first();
         $this->assertNotNull($trip);
 
-        // Assert SPPD created for both participants with status draft
+        // Pastikan SPPD dibuat untuk kedua peserta dengan status draft
         $this->assertDatabaseHas('sppds', [
             'business_trip_id' => $trip->id,
             'employee_id' => $employee1->id,
@@ -134,7 +141,12 @@ class DomainMemoTest extends TestCase
         $posManager = Position::create(['name' => 'Manager MESI', 'code' => 'MGR', 'level' => 1]);
         $posStaff = Position::create(['name' => 'Staff MESI', 'code' => 'STF', 'level' => 4]);
 
-        $managerUser = \App\Models\User::factory()->create(['name' => 'Manager MESI']);
+        $managerUser = \App\Models\User::factory()->create([
+            'name' => 'Manager MESI',
+            'signature_type' => 'draw',
+            'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            'signature_updated_at' => now(),
+        ]);
         $managerUser->assignRole('Manager');
 
         $managerEmp = Employee::create([
@@ -176,8 +188,12 @@ class DomainMemoTest extends TestCase
             'to_recipient' => 'Manager MESI',
             'agenda' => 'Penugasan Pelatihan',
             'content' => 'Isi memo penugasan pelatihan',
+            'participants' => [$staffEmp->id],
             'status' => 'pending',
         ]);
+
+        // Pastikan belum ada SPPD sebelum disetujui
+        $this->assertEquals(0, Sppd::where('employee_id', $staffEmp->id)->count());
 
         $this->actingAs($managerUser);
         \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
@@ -194,6 +210,9 @@ class DomainMemoTest extends TestCase
 
         $memo->refresh();
         $this->assertEquals('approved', $memo->status);
+
+        // Setelah disetujui, SPPD harus otomatis tergenerate untuk peserta
+        $this->assertEquals(1, Sppd::where('employee_id', $staffEmp->id)->count());
 
         // Test rejection flow on another memo
         $memo2 = Memo::create([
@@ -266,5 +285,87 @@ class DomainMemoTest extends TestCase
             ->assertTableActionVisible('print', $approvedMemo)
             ->assertTableActionVisible('view_review', $approvedMemo)
             ->assertTableActionHidden('edit', $approvedMemo);
+    }
+
+    public function test_approved_memo_can_be_printed_as_pdf_with_logo()
+    {
+        $org = Organization::create(['name' => 'PT Test', 'code' => 'TEST']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'MESI', 'code' => 'MESI']);
+        $pos = Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+        $mgrPos = Position::create(['name' => 'Manajer Kontrak', 'code' => 'MGR-KTR', 'level' => 2]);
+
+        $mgrUser = \App\Models\User::factory()->create();
+        $mgr = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+            'user_id' => $mgrUser->id,
+            'name' => 'Iftari Manager',
+            'identity_number' => 'MGR-001',
+        ]);
+
+        $user = \App\Models\User::factory()->create();
+        $emp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'user_id' => $user->id,
+            'manager_id' => $mgr->id,
+            'name' => 'Test Employee',
+            'identity_number' => 'EMP-PRINT-01',
+        ]);
+
+        $memo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $emp->id,
+            'to_recipient' => 'Manager MESI',
+            'agenda' => 'Test Print Memo',
+            'assignment_start_date' => '2026-10-22',
+            'assignment_end_date' => '2026-10-27',
+            'location' => 'Bandung',
+            'content' => 'Test Content',
+            'nomor_memo' => '001/MEMO/2026',
+            'date' => '2026-10-22',
+            'status' => 'approved',
+        ]);
+
+        $renderedHtml = view('memos.print', [
+            'memo' => $memo->load(['creator.position', 'creator.manager.position', 'department']),
+            'manager' => $mgr,
+            'managerTitle' => $mgr->position->name,
+        ])->render();
+
+        $this->assertStringContainsString('Kamis - Selasa / 22 - 27 Oktober 2026', $renderedHtml);
+        $this->assertStringContainsString('Manajer Kontrak', $renderedHtml);
+        $this->assertStringNotContainsString('Manajer Kontrak MESI', $renderedHtml);
+
+        $response = $this->actingAs($user)->get(route('memos.print', $memo));
+        $response->assertStatus(200);
+        $this->assertEquals('application/pdf', $response->headers->get('Content-Type'));
+    }
+
+    public function test_memo_approvals_page_renders_tabs_and_mobile_dropdown(): void
+    {
+        $role = \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'Manager']);
+        $permission = \Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'view_any_memo::approval']);
+        $role->givePermissionTo($permission);
+
+        $user = \App\Models\User::factory()->create();
+        $user->assignRole('Manager');
+
+        $this->actingAs($user);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        \Livewire\Livewire::actingAs($user)
+            ->test(\App\Filament\Admin\Resources\MemoApprovalResource\Pages\ListMemoApprovals::class)
+            ->assertSuccessful()
+            ->assertSeeHtml('mobile-tab-select-')
+            ->assertSeeHtml('Status')
+            ->assertSeeHtml('Menunggu Persetujuan')
+            ->assertSeeHtml('Disetujui')
+            ->assertSeeHtml('Ditolak')
+            ->assertSeeHtml('Semua')
+            ->set('activeTab', 'approved')
+            ->assertSet('activeTab', 'approved');
     }
 }

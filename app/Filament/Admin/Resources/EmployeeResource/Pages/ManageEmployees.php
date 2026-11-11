@@ -16,7 +16,8 @@ class ManageEmployees extends ManageRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Tambah Pegawai'),
+                ->label('Tambah Pegawai')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

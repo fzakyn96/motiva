@@ -31,20 +31,40 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->font('Outfit')
             ->brandName('MOTIVA')
+            ->brandLogo(fn () => asset('images/logo-motiva.png'))
+            ->darkModeBrandLogo(fn () => asset('images/logo-motiva.png'))
+            ->brandLogoHeight('2.75rem')
+            ->favicon(fn () => asset('images/logo-motiva-icon.png'))
             ->sidebarCollapsibleOnDesktop()
             ->topNavigation(false)
             ->maxContentWidth('full')
+            ->navigationGroups([
+                \Filament\Navigation\NavigationGroup::make()
+                    ->label('Dokumen'),
+                \Filament\Navigation\NavigationGroup::make()
+                    ->label('Persetujuan'),
+                \Filament\Navigation\NavigationGroup::make()
+                    ->label('Keuangan'),
+                \Filament\Navigation\NavigationGroup::make()
+                    ->label('Manajemen Pengguna'),
+                \Filament\Navigation\NavigationGroup::make()
+                    ->label('Pengaturan'),
+            ])
             ->discoverClusters(in: app_path('Filament/Admin/Clusters'), for: 'App\\Filament\\Admin\\Clusters')
             ->discoverResources(in: app_path('Filament/Admin/Resources'), for: 'App\\Filament\\Admin\\Resources')
             ->discoverPages(in: app_path('Filament/Admin/Pages'), for: 'App\\Filament\\Admin\\Pages')
             ->pages([
-                Pages\Dashboard::class,
+                \App\Filament\Admin\Pages\Dashboard::class,
+                \App\Filament\Admin\Pages\SignatureSettingsPage::class,
+            ])
+            ->userMenuItems([
+                \Filament\Navigation\MenuItem::make()
+                    ->label('Tanda Tangan')
+                    ->url(fn (): string => \App\Filament\Admin\Pages\SignatureSettingsPage::getUrl())
+                    ->icon('heroicon-o-pencil-square'),
             ])
             ->discoverWidgets(in: app_path('Filament/Admin/Widgets'), for: 'App\\Filament\\Admin\\Widgets')
-            ->widgets([
-                Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
-            ])
+            ->widgets([])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

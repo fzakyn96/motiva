@@ -17,7 +17,7 @@
 @if(count($participantsList) > 0)
     <div class="overflow-x-auto rounded-xl border border-gray-200 dark:border-white/10">
         <table class="w-full text-left text-sm divide-y divide-gray-200 dark:divide-white/10">
-            <thead class="bg-gray-50 dark:bg-white/5 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+            <thead class="bg-gray-50 dark:bg-white/5 text-xs font-semibold text-gray-700 dark:text-white uppercase tracking-wider">
                 <tr>
                     <th class="w-12 px-4 py-3">No</th>
                     <th class="px-4 py-3">Nama Pegawai & NIP</th>
@@ -27,12 +27,12 @@
             <tbody class="divide-y divide-gray-200 dark:divide-white/10">
                 @foreach ($participantsList as $index => $emp)
                     <tr class="hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
-                        <td class="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">{{ $index + 1 }}</td>
+                        <td class="px-4 py-3 font-medium text-gray-500 dark:text-white">{{ $index + 1 }}</td>
                         <td class="px-4 py-3">
                             <div class="font-bold text-gray-900 dark:text-white">{{ $emp->name }}</div>
                             <div class="font-mono text-xs text-gray-500 dark:text-gray-400">NIP: {{ $emp->identity_number }}</div>
                         </td>
-                        <td class="px-4 py-3 text-gray-700 dark:text-gray-300">
+                        <td class="px-4 py-3 text-gray-700 dark:text-white">
                             <div>{{ $emp->position?->name ?? 'Staff' }}</div>
                             <div class="text-xs text-gray-500 dark:text-gray-400">{{ $emp->department?->name ?? '-' }}</div>
                         </td>

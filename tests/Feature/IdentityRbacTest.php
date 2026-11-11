@@ -15,8 +15,8 @@ class IdentityRbacTest extends TestCase
     public function test_user_can_be_assigned_role_and_permission()
     {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'manager']);
-        $permission = Permission::create(['name' => 'approve memo']);
+        $role = Role::firstOrCreate(['name' => 'manager']);
+        $permission = Permission::firstOrCreate(['name' => 'approve memo']);
 
         $role->givePermissionTo($permission);
         $user->assignRole('manager');
@@ -27,6 +27,7 @@ class IdentityRbacTest extends TestCase
 
     public function test_user_without_permission_cannot_perform_action()
     {
+        Permission::firstOrCreate(['name' => 'approve memo']);
         $user = User::factory()->create();
         $this->assertFalse($user->hasPermissionTo('approve memo'));
     }

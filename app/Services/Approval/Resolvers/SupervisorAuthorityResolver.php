@@ -11,28 +11,63 @@ class SupervisorAuthorityResolver implements AuthorityResolver
     public function hasAuthority(ApprovalRequest $request, Employee $employee): bool
     {
         $requester = $request->requester;
-        // In a real application, there would be logic to determine the supervisor
-        // For example, finding an employee with 'Supervisor' position in the same department
-        
-        if (!$requester || !$requester->department_id) {
+        if (! $requester) {
             return false;
         }
 
-        // Simplification for the example: assume level 2 is Supervisor in the position table
-        return (int)$employee->department_id === (int)$requester->department_id 
-            && $employee->position && $employee->position->level === 2;
+        // An employee cannot approve their own request
+        if ((int) $requester->id === (int) $employee->id) {
+            return false;
+        }
+
+        // 1. Superadmin & Admin bypass
+        if ($employee->user && ($employee->user->hasRole('Superadmin') || $employee->user->hasRole('Admin'))) {
+            return true;
+        }
+
+        // 2. Direct supervisor / manager of the requester
+        if ($requester->manager_id && (int) $requester->manager_id === (int) $employee->id) {
+            return true;
+        }
+
+        // 3. Supervisor in the same department (Position level 2 or name/code Supervisor)
+        if ($requester->department_id && (int) $employee->department_id === (int) $requester->department_id) {
+            if ($employee->position && ((int) $employee->position->level === 2 || str_contains(strtoupper($employee->position->name), 'SUPERVISOR') || strtoupper($employee->position->code) === 'SPV')) {
+                return true;
+            }
+
+            if ($employee->user && $employee->user->hasRole('Supervisor')) {
+                return true;
+            }
+        }
+
+        // 4. User role Supervisor in general
+        if ($employee->user && $employee->user->hasRole('Supervisor')) {
+            return true;
+        }
+
+        return false;
     }
 
     public function resolveApprovers(ApprovalRequest $request): mixed
     {
         $requester = $request->requester;
-        if (!$requester || !$requester->department_id) {
+        if (! $requester) {
             return null;
         }
 
-        return Employee::where('department_id', $requester->department_id)
-            ->whereHas('position', function ($query) {
-                $query->where('level', 2); // Level 2 = Supervisor
-            })->pluck('id')->toArray();
+        if ($requester->manager_id) {
+            return $requester->manager_id;
+        }
+
+        if ($requester->department_id) {
+            return Employee::where('department_id', $requester->department_id)
+                ->where(function ($query) {
+                    $query->whereHas('position', fn ($q) => $q->where('level', 2))
+                        ->orWhereHas('user.roles', fn ($q) => $q->where('name', 'Supervisor'));
+                })->pluck('id')->toArray();
+        }
+
+        return null;
     }
 }

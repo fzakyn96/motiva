@@ -13,7 +13,9 @@ class ManageRoles extends ManageRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Tambah Peran')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

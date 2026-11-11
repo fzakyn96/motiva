@@ -19,6 +19,12 @@ class ReviewMemo extends ViewRecord
 
     protected static ?string $title = 'Review Memo';
 
+    public static function authorizeResourceAccess(): void
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        abort_unless($user && ($user->hasRole(['Manager', 'Supervisor', 'Admin', 'Superadmin', 'HR']) || static::getResource()::canAccess()), 403);
+    }
+
     public function getBreadcrumbs(): array
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
@@ -82,6 +88,12 @@ class ReviewMemo extends ViewRecord
         /** @var Memo $memo */
         $memo = $this->getRecord();
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+
+        $sigService = app(\App\Services\Signature\SignatureService::class);
+        if (! $sigService->ensureUserCanSign($user)) {
+            return;
+        }
+
         $employee = $user?->employee;
 
         if (! $employee && $user) {
@@ -103,7 +115,8 @@ class ReviewMemo extends ViewRecord
 
         if (! $request) {
             $memo->update(['status' => 'approved']);
-            Notification::make()->title('Memo Berhasil Disetujui')->success()->send();
+            $sigService->signDocument($memo, $employee, 'manager', 'Disetujui melalui Halaman Review', $user);
+            Notification::make()->title('Memo Berhasil Disetujui & Ditandatangani')->success()->send();
             $this->redirect(MemoResource::getUrl('review', ['record' => $memo]));
             return;
         }
@@ -117,7 +130,9 @@ class ReviewMemo extends ViewRecord
                 $memo->update(['status' => 'approved']);
             }
 
-            Notification::make()->title('Memo Berhasil Disetujui')->success()->send();
+            $sigService->signDocument($memo, $employee, 'manager', 'Disetujui melalui Halaman Review', $user);
+
+            Notification::make()->title('Memo Berhasil Disetujui & Ditandatangani')->success()->send();
         } catch (\Exception $e) {
             $currentStep = $request->currentStep();
             if ($currentStep) {
@@ -129,8 +144,9 @@ class ReviewMemo extends ViewRecord
             }
             $request->update(['status' => 'approved']);
             $memo->update(['status' => 'approved']);
+            $sigService->signDocument($memo, $employee, 'manager', 'Disetujui oleh ' . ($user->name ?? 'Manajer'), $user);
 
-            Notification::make()->title('Memo Berhasil Disetujui')->success()->send();
+            Notification::make()->title('Memo Berhasil Disetujui & Ditandatangani')->success()->send();
         }
 
         $redirectUrl = request()->query('from') === 'approvals'
@@ -216,9 +232,15 @@ class ReviewMemo extends ViewRecord
                 // ->size(ActionSize::Large)
                 ->visible(fn () => $this->canPerformApproval())
                 ->requiresConfirmation()
-                ->modalHeading('Konfirmasi Persetujuan Memo')
-                ->modalDescription('Apakah Anda yakin menyetujui memo ini? Setelah disetujui, nomor dokumen dan tanda tangan resmi akan disahkan.')
-                ->modalSubmitActionLabel('Ya, Setujui')
+                ->modalHeading('Konfirmasi Persetujuan & Pembubuhan Tanda Tangan')
+                ->modalDescription(function () {
+                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                    if (! $user?->hasConfiguredSignature()) {
+                        return 'PERHATIAN: Anda belum mengatur tanda tangan. Anda harus mengatur tanda tangan terlebih dahulu (cukup 1 kali) di menu Tanda Tangan sebelum dapat menandatangani dokumen ini.';
+                    }
+                    return 'Apakah Anda yakin menyetujui memo ini? Tanda tangan Anda yang telah tersimpan akan otomatis dibubuhkan pada dokumen ini.';
+                })
+                ->modalSubmitActionLabel('Ya, Setujui & Tandatangani')
                 ->modalCancelActionLabel('Batal')
                 ->action(fn () => $this->approveMemo()),
 

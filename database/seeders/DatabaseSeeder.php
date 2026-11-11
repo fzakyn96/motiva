@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
             AdminSeeder::class,
             RolesAndPermissionsSeeder::class,
             EmployeeSeeder::class,
+            SppdRateStandardSeeder::class,
             SimulationSeeder::class,
         ]);
     }

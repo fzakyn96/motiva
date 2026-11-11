@@ -14,5 +14,28 @@ class DataPegawai extends Cluster
 
     protected static ?string $clusterBreadcrumb = 'Data Pegawai';
 
-    protected static ?int $navigationSort = 0;
+    protected static ?int $navigationSort = 1;
+
+    public static function canAccess(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) return false;
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+    }
+
+    public static function getNavigationBadge(): ?string
+    {
+        $count = \App\Models\Employee::count();
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'info';
+    }
+
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return 'Total Data Pegawai';
+    }
 }

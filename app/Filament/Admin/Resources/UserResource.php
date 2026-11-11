@@ -2,10 +2,12 @@
 
 namespace App\Filament\Admin\Resources;
 
+use App\Filament\Admin\Clusters\HakAkses;
 use App\Filament\Admin\Resources\UserResource\Pages;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Pages\SubNavigationPosition;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -15,39 +17,81 @@ class UserResource extends Resource
 {
     protected static ?string $model = User::class;
 
+    protected static ?string $cluster = HakAkses::class;
+    protected static SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
+
     protected static ?string $navigationIcon = 'heroicon-o-users';
-    protected static ?string $navigationGroup = 'Manajemen Pengguna';
     protected static ?string $navigationLabel = 'Pengguna';
     protected static ?string $modelLabel = 'Pengguna';
     protected static ?string $pluralModelLabel = 'Pengguna';
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 1;
+
+    public static function canViewAny(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) return false;
+        return $user->hasAnyRole(['Superadmin', 'Admin']);
+    }
+
+    public static function getNavigationBadge(): ?string
+    {
+        $count = static::getEloquentQuery()->count();
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'primary';
+    }
+
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return 'Total Pengguna';
+    }
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('name')
-                    ->label('Nama Lengkap')
-                    ->required()
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('email')
-                    ->label('Email')
-                    ->email()
-                    ->required()
-                    ->unique(ignoreRecord: true)
-                    ->maxLength(255),
-                Forms\Components\Select::make('roles')
-                    ->label('Peran (Role)')
-                    ->multiple()
-                    ->relationship('roles', 'name')
-                    ->preload(),
-                Forms\Components\TextInput::make('password')
-                    ->label('Kata Sandi')
-                    ->password()
-                    ->dehydrateStateUsing(fn ($state) => Hash::make($state))
-                    ->dehydrated(fn ($state) => filled($state))
-                    ->required(fn (string $context): bool => $context === 'create')
-                    ->maxLength(255),
+                Forms\Components\Section::make('Informasi Akun & Kredensial Pengguna')
+                    ->icon('heroicon-o-user-circle')
+                    ->iconColor('primary')
+                    ->description('Kelola identitas login pengguna, peran akses (role), dan kata sandi keamanan.')
+                    ->schema([
+                        Forms\Components\TextInput::make('name')
+                            ->label('Nama Lengkap Pengguna')
+                            ->prefixIcon('heroicon-m-user')
+                            ->placeholder('Masukkan nama lengkap pengguna')
+                            ->required()
+                            ->maxLength(255),
+                        Forms\Components\TextInput::make('email')
+                            ->label('Alamat Email Login')
+                            ->prefixIcon('heroicon-m-envelope')
+                            ->placeholder('nama@perusahaan.co.id')
+                            ->email()
+                            ->required()
+                            ->unique(ignoreRecord: true)
+                            ->maxLength(255),
+                        Forms\Components\Select::make('roles')
+                            ->label('Peran Sistem (Role)')
+                            ->prefixIcon('heroicon-m-shield-check')
+                            ->multiple()
+                            ->relationship('roles', 'name')
+                            ->preload()
+                            ->helperText('Pilih satu atau lebih peran untuk menentukan hak akses menu pengguna.'),
+                        Forms\Components\TextInput::make('password')
+                            ->label('Kata Sandi')
+                            ->prefixIcon('heroicon-m-lock-closed')
+                            ->password()
+                            ->revealable()
+                            ->placeholder(fn (string $context): string => $context === 'edit' ? 'Kosongkan bila tidak diubah' : 'Masukkan kata sandi baru')
+                            ->helperText(fn (string $context): string => $context === 'edit' ? 'Biarkan kosong jika tidak ingin mengganti kata sandi saat ini.' : 'Gunakan kata sandi yang kuat untuk keamanan akun.')
+                            ->dehydrateStateUsing(fn ($state) => Hash::make($state))
+                            ->dehydrated(fn ($state) => filled($state))
+                            ->required(fn (string $context): bool => $context === 'create')
+                            ->maxLength(255),
+                    ])
+                    ->columns(['default' => 1, 'md' => 2]),
             ]);
     }
 
@@ -81,14 +125,23 @@ class UserResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
-                    ->label('Ubah'),
+                    ->label('Ubah')
+                    ->icon('heroicon-o-pencil-square')
+                    ->button()
+                    ->size('sm')
+                    ->color('warning'),
                 Tables\Actions\DeleteAction::make()
-                    ->label('Hapus'),
+                    ->label('Hapus')
+                    ->icon('heroicon-o-trash')
+                    ->button()
+                    ->size('sm')
+                    ->color('danger'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->label('Hapus Terpilih'),
+                        ->label('Hapus Terpilih')
+                        ->icon('heroicon-o-trash'),
                 ]),
             ]);
     }

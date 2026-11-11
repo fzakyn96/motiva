@@ -27,7 +27,8 @@ class ListMemos extends ListRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Buat Memo'),
+                ->label('Buat Memo')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

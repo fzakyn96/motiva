@@ -26,28 +26,62 @@ class DepartmentResource extends Resource
     protected static ?string $pluralModelLabel = 'Unit Kerja';
     protected static ?int $navigationSort = 2;
 
+    public static function canViewAny(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) return false;
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+    }
+
+    public static function getNavigationBadge(): ?string
+    {
+        $count = static::getEloquentQuery()->count();
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'info';
+    }
+
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return 'Total Unit Kerja';
+    }
+
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Select::make('organization_id')
-                    ->label('Organisasi')
-                    ->relationship('organization', 'name')
-                    ->default(fn () => Organization::first()?->id)
-                    ->required()
-                    ->searchable()
-                    ->preload(),
-                Forms\Components\TextInput::make('code')
-                    ->label('Kode Unit Kerja')
-                    ->required()
-                    ->unique(ignoreRecord: true)
-                    ->maxLength(50)
-                    ->placeholder('Contoh: MESI, REG1'),
-                Forms\Components\TextInput::make('name')
-                    ->label('Nama Unit Kerja')
-                    ->required()
-                    ->maxLength(255)
-                    ->placeholder('Contoh: MESI, Regional 1'),
+                Forms\Components\Section::make('Informasi Unit Kerja')
+                    ->icon('heroicon-o-building-office-2')
+                    ->iconColor('primary')
+                    ->description('Atur organisasi induk, kode unik, serta nama unit kerja / departemen.')
+                    ->schema([
+                        Forms\Components\Select::make('organization_id')
+                            ->label('Organisasi Induk')
+                            ->prefixIcon('heroicon-m-building-library')
+                            ->relationship('organization', 'name')
+                            ->default(fn () => Organization::first()?->id)
+                            ->required()
+                            ->searchable()
+                            ->preload()
+                            ->columnSpanFull(),
+                        Forms\Components\TextInput::make('code')
+                            ->label('Kode Unit Kerja')
+                            ->prefixIcon('heroicon-m-hashtag')
+                            ->required()
+                            ->unique(ignoreRecord: true)
+                            ->maxLength(50)
+                            ->placeholder('Contoh: MESI, REG1'),
+                        Forms\Components\TextInput::make('name')
+                            ->label('Nama Unit Kerja')
+                            ->prefixIcon('heroicon-m-building-office-2')
+                            ->required()
+                            ->maxLength(255)
+                            ->placeholder('Contoh: MESI, Regional 1'),
+                    ])
+                    ->columns(['default' => 1, 'md' => 2]),
             ]);
     }
 
@@ -85,14 +119,23 @@ class DepartmentResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
-                    ->label('Ubah'),
+                    ->label('Ubah')
+                    ->icon('heroicon-o-pencil-square')
+                    ->button()
+                    ->size('sm')
+                    ->color('warning'),
                 Tables\Actions\DeleteAction::make()
-                    ->label('Hapus'),
+                    ->label('Hapus')
+                    ->icon('heroicon-o-trash')
+                    ->button()
+                    ->size('sm')
+                    ->color('danger'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->label('Hapus Terpilih'),
+                        ->label('Hapus Terpilih')
+                        ->icon('heroicon-o-trash'),
                 ]),
             ]);
     }

@@ -22,12 +22,12 @@
 
 <div class="space-y-4">
     {{-- Pengajuan --}}
-    <div class="flex items-start gap-3">
+    <div class="flex items-start gap-3" style="gap: 0.75rem;">
         <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
             <x-heroicon-m-check class="h-4 w-4" />
         </div>
         <div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" style="gap: 0.625rem;">
                 <span class="text-sm font-bold text-gray-900 dark:text-white">Dokumen Memo Diajukan</span>
                 <x-filament::badge color="success" size="xs">Diajukan</x-filament::badge>
             </div>
@@ -42,7 +42,7 @@
             @php
                 $pemeriksaName = $step->approver ? $step->approver->name : $defaultManagerName;
             @endphp
-            <div class="flex items-start gap-3">
+            <div class="flex items-start gap-3" style="gap: 0.75rem;">
                 @if ($step->status === 'approved')
                     <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
                         <x-heroicon-m-check class="h-4 w-4" />
@@ -57,7 +57,7 @@
                     </div>
                 @endif
                 <div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2" style="gap: 0.625rem;">
                         <span class="text-sm font-bold text-gray-900 dark:text-white">
                             {{ $step->policyStep?->step_name ?? 'Persetujuan Manajer' }}
                         </span>

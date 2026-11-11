@@ -13,7 +13,9 @@ class ListSppds extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Buat SPPD')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

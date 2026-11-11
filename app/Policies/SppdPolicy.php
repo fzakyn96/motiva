@@ -9,13 +9,17 @@ class SppdPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['Admin', 'Superadmin', 'Manager', 'Supervisor', 'HR', 'Staff'])
+        if ($user->hasAnyRole(['Manager', 'Supervisor']) && ! $user->hasAnyRole(['Admin', 'Superadmin', 'HR'])) {
+            return false;
+        }
+
+        return $user->hasAnyRole(['Admin', 'Superadmin', 'HR', 'Staff'])
             || $user->can('view_any_sppd');
     }
 
     public function view(User $user, Sppd $sppd): bool
     {
-        if ($user->hasAnyRole(['Admin', 'Superadmin'])) {
+        if ($user->hasAnyRole(['Admin', 'Superadmin', 'HR'])) {
             return true;
         }
 
@@ -24,8 +28,8 @@ class SppdPolicy
             return false;
         }
 
-        // Managers, Supervisors, and HR can view SPPD in their department
-        if ($user->hasAnyRole(['Manager', 'Supervisor', 'HR'])) {
+        // Managers and Supervisors can view SPPD in their department
+        if ($user->hasAnyRole(['Manager', 'Supervisor'])) {
             return $sppd->employee?->department_id === $employee->department_id;
         }
 
@@ -41,7 +45,7 @@ class SppdPolicy
 
     public function update(User $user, Sppd $sppd): bool
     {
-        if ($user->hasAnyRole(['Admin', 'Superadmin'])) {
+        if ($user->hasAnyRole(['Admin', 'Superadmin', 'HR'])) {
             return true;
         }
 
@@ -55,8 +59,8 @@ class SppdPolicy
             return in_array($sppd->status, ['draft', 'pending']);
         }
 
-        // HR, Supervisor, Manager in the same unit can update
-        if ($user->hasAnyRole(['Manager', 'Supervisor', 'HR'])) {
+        // Supervisor, Manager in the same unit can update
+        if ($user->hasAnyRole(['Manager', 'Supervisor'])) {
             return $sppd->employee?->department_id === $employee->department_id;
         }
 

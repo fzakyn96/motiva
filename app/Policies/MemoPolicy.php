@@ -12,7 +12,11 @@ class MemoPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['Admin', 'Superadmin', 'Manager', 'Supervisor', 'HR', 'Staff'])
+        if ($user->hasAnyRole(['Manager', 'Supervisor']) && ! $user->hasAnyRole(['Admin', 'Superadmin', 'HR'])) {
+            return false;
+        }
+
+        return $user->hasAnyRole(['Admin', 'Superadmin', 'HR', 'Staff'])
             || $user->can('view_any_memo');
     }
 
@@ -21,7 +25,7 @@ class MemoPolicy
      */
     public function view(User $user, Memo $memo): bool
     {
-        if ($user->hasAnyRole(['Admin', 'Superadmin'])) {
+        if ($user->hasAnyRole(['Admin', 'Superadmin', 'HR'])) {
             return true;
         }
 

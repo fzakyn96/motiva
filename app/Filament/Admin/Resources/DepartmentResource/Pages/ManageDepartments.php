@@ -16,7 +16,8 @@ class ManageDepartments extends ManageRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Tambah Unit Kerja'),
+                ->label('Tambah Unit Kerja')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

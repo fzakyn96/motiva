@@ -22,6 +22,8 @@ class AppServiceProvider extends ServiceProvider
     {
         \App\Models\ApprovalRequest::observe(\App\Observers\ApprovalRequestObserver::class);
         \App\Models\Memo::observe(\App\Observers\MemoObserver::class);
+        \App\Models\Sppd::observe(\App\Observers\SppdObserver::class);
+        \App\Models\Reimbursement::observe(\App\Observers\ReimbursementObserver::class);
 
         Gate::before(function ($user, $ability) {
             return $user->hasRole('Superadmin') ? true : null;

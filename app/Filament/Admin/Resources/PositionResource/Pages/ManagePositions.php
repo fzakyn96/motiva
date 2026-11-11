@@ -16,7 +16,8 @@ class ManagePositions extends ManageRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Tambah Jabatan'),
+                ->label('Tambah Jabatan')
+                ->icon('heroicon-o-plus'),
         ];
     }
 }

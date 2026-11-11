@@ -23,8 +23,15 @@ class EmployeeSeeder extends Seeder
         $permissions = [
             'view_any_memo', 'view_memo', 'create_memo', 'update_memo', 'delete_memo', 'restore_memo', 'force_delete_memo',
             'view_any_sppd', 'view_sppd', 'create_sppd', 'update_sppd', 'delete_sppd',
+            'view_any_sppd::cost', 'view_sppd::cost', 'create_sppd::cost', 'update_sppd::cost', 'delete_sppd::cost',
+            'view_any_sppd::rate::standard', 'view_sppd::rate::standard', 'create_sppd::rate::standard', 'update_sppd::rate::standard', 'delete_sppd::rate::standard',
             'view_any_reimbursement', 'view_reimbursement', 'create_reimbursement', 'update_reimbursement', 'delete_reimbursement',
             'view_any_employee', 'view_employee', 'create_employee', 'update_employee', 'delete_employee',
+            'view_any_department', 'view_department', 'create_department', 'update_department', 'delete_department',
+            'view_any_position', 'view_position', 'create_position', 'update_position', 'delete_position',
+            'view_any_user', 'view_user', 'create_user', 'update_user', 'delete_user',
+            'view_any_role', 'view_role', 'create_role', 'update_role', 'delete_role',
+            'view_any_permission', 'view_permission', 'create_permission', 'update_permission', 'delete_permission',
             'approve_memo', 'approve_sppd', 'approve_reimbursement',
         ];
 
@@ -32,15 +39,13 @@ class EmployeeSeeder extends Seeder
             Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
         }
 
-        // 2. Setup Roles
-        $roleAdmin = Role::firstOrCreate(['name' => 'Admin', 'guard_name' => 'web']);
+        // 2. Setup Roles (Superadmin, Manager, Supervisor, HR, Staff) - Tidak ada user Admin
         $roleSuperadmin = Role::firstOrCreate(['name' => 'Superadmin', 'guard_name' => 'web']);
         $roleManager = Role::firstOrCreate(['name' => 'Manager', 'guard_name' => 'web']);
         $roleSupervisor = Role::firstOrCreate(['name' => 'Supervisor', 'guard_name' => 'web']);
         $roleHR = Role::firstOrCreate(['name' => 'HR', 'guard_name' => 'web']);
         $roleStaff = Role::firstOrCreate(['name' => 'Staff', 'guard_name' => 'web']);
 
-        $roleAdmin->syncPermissions($permissions);
         $roleSuperadmin->syncPermissions($permissions);
 
         $roleManager->syncPermissions([
@@ -60,10 +65,14 @@ class EmployeeSeeder extends Seeder
         ]);
 
         $roleHR->syncPermissions([
-            'view_any_memo', 'view_memo', 'create_memo', 'update_memo',
-            'view_any_sppd', 'view_sppd', 'create_sppd',
-            'view_any_reimbursement', 'view_reimbursement', 'create_reimbursement',
-            'view_any_employee', 'view_employee', 'create_employee', 'update_employee',
+            'view_any_memo', 'view_memo', 'create_memo', 'update_memo', 'delete_memo',
+            'view_any_sppd', 'view_sppd', 'create_sppd', 'update_sppd', 'delete_sppd',
+            'view_any_sppd::cost', 'view_sppd::cost', 'create_sppd::cost', 'update_sppd::cost', 'delete_sppd::cost',
+            'view_any_sppd::rate::standard', 'view_sppd::rate::standard', 'create_sppd::rate::standard', 'update_sppd::rate::standard', 'delete_sppd::rate::standard',
+            'view_any_reimbursement', 'view_reimbursement', 'create_reimbursement', 'update_reimbursement', 'delete_reimbursement',
+            'view_any_employee', 'view_employee', 'create_employee', 'update_employee', 'delete_employee',
+            'view_any_department', 'view_department', 'create_department', 'update_department', 'delete_department',
+            'view_any_position', 'view_position', 'create_position', 'update_position', 'delete_position',
         ]);
 
         $roleStaff->syncPermissions([
@@ -79,376 +88,262 @@ class EmployeeSeeder extends Seeder
             ['name' => 'PT Motiva Nusantara']
         );
 
-        // 4. Setup Departments (Units)
-        $units = [
-            'MESI' => Department::firstOrCreate(['code' => 'MESI'], ['name' => 'MESI', 'organization_id' => $org->id]),
-            'Regional 1' => Department::firstOrCreate(['code' => 'REG1'], ['name' => 'Regional 1', 'organization_id' => $org->id]),
-            'Regional 2' => Department::firstOrCreate(['code' => 'REG2'], ['name' => 'Regional 2', 'organization_id' => $org->id]),
-            'Regional 3' => Department::firstOrCreate(['code' => 'REG3'], ['name' => 'Regional 3', 'organization_id' => $org->id]),
-        ];
+        // 4. Setup Departments (Unit / Area)
+        $deptJakarta = Department::firstOrCreate(
+            ['code' => 'JKT'],
+            ['name' => 'Jakarta', 'organization_id' => $org->id]
+        );
+
+        // Pertahankan unit referensi legacy bila diperlukan
+        Department::firstOrCreate(['code' => 'MESI'], ['name' => 'MESI', 'organization_id' => $org->id]);
+        Department::firstOrCreate(['code' => 'REG1'], ['name' => 'Regional 1', 'organization_id' => $org->id]);
+        Department::firstOrCreate(['code' => 'REG2'], ['name' => 'Regional 2', 'organization_id' => $org->id]);
+        Department::firstOrCreate(['code' => 'REG3'], ['name' => 'Regional 3', 'organization_id' => $org->id]);
 
         // 5. Setup Positions
-        $posManager = Position::firstOrCreate(['code' => 'MGR'], ['name' => 'Manager', 'level' => 1]);
-        $posSupervisor = Position::firstOrCreate(['code' => 'SPV'], ['name' => 'Supervisor', 'level' => 2]);
-        $posHR = Position::firstOrCreate(['code' => 'HR'], ['name' => 'HR Specialist', 'level' => 3]);
-        $posStaff = Position::firstOrCreate(['code' => 'STF'], ['name' => 'Staff', 'level' => 4]);
-
-        // 6. Data Definitions: 30 Pegawai (4 Units)
-        $employeeData = [
-            // ==================== UNIT 1: MESI (8 Pegawai) ====================
-            [
-                'unit' => 'MESI',
-                'name' => 'Bambang Wijaya',
-                'nip' => '198001152005011001',
-                'email' => 'manager.mesi@motiva.com',
-                'position' => $posManager,
-                'role' => 'Manager',
-                'is_manager' => true,
-            ],
-            [
-                'unit' => 'MESI',
-                'name' => 'Agus Setiawan',
-                'nip' => '198503202008011002',
-                'email' => 'spv.mesi@motiva.com',
-                'position' => $posSupervisor,
-                'role' => 'Supervisor',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'MESI',
-                'name' => 'Dewi Lestari',
-                'nip' => '198807122010012003',
-                'email' => 'hr.mesi@motiva.com',
-                'position' => $posHR,
-                'role' => 'HR',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'MESI',
-                'name' => 'Budi Santoso',
-                'nip' => '199005042014011004',
-                'email' => 'budi.santoso@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'MESI',
-                'name' => 'Siti Nurhaliza',
-                'nip' => '199209182015012005',
-                'email' => 'siti.nurhaliza@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'MESI',
-                'name' => 'Rian Hidayat',
-                'nip' => '199311252016011006',
-                'email' => 'rian.hidayat@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'MESI',
-                'name' => 'Maya Putri',
-                'nip' => '199402142017012007',
-                'email' => 'maya.putri@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'MESI',
-                'name' => 'Dimas Pratama',
-                'nip' => '199508302018011008',
-                'email' => 'dimas.pratama@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-
-            // ==================== UNIT 2: Regional 1 (8 Pegawai) ====================
-            [
-                'unit' => 'Regional 1',
-                'name' => 'Hendra Gunawan',
-                'nip' => '198104102005021009',
-                'email' => 'manager.reg1@motiva.com',
-                'position' => $posManager,
-                'role' => 'Manager',
-                'is_manager' => true,
-            ],
-            [
-                'unit' => 'Regional 1',
-                'name' => 'Eko Prasetyo',
-                'nip' => '198606152009011010',
-                'email' => 'spv.reg1@motiva.com',
-                'position' => $posSupervisor,
-                'role' => 'Supervisor',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 1',
-                'name' => 'Rini Astuti',
-                'nip' => '198902282011012011',
-                'email' => 'hr.reg1@motiva.com',
-                'position' => $posHR,
-                'role' => 'HR',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 1',
-                'name' => 'Ahmad Fauzi',
-                'nip' => '199108172014021012',
-                'email' => 'ahmad.fauzi@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 1',
-                'name' => 'Putri Anggraini',
-                'nip' => '199304052016022013',
-                'email' => 'putri.anggraini@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 1',
-                'name' => 'Rizky Ramadhan',
-                'nip' => '199410122017021014',
-                'email' => 'rizky.ramadhan@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 1',
-                'name' => 'Indah Permata',
-                'nip' => '199501232018022015',
-                'email' => 'indah.permata@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 1',
-                'name' => 'Fajar Nugraha',
-                'nip' => '199607192019011016',
-                'email' => 'fajar.nugraha@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-
-            // ==================== UNIT 3: Regional 2 (7 Pegawai) ====================
-            [
-                'unit' => 'Regional 2',
-                'name' => 'Arif Budiman',
-                'nip' => '198205122006011017',
-                'email' => 'manager.reg2@motiva.com',
-                'position' => $posManager,
-                'role' => 'Manager',
-                'is_manager' => true,
-            ],
-            [
-                'unit' => 'Regional 2',
-                'name' => 'Joko Susilo',
-                'nip' => '198708212010021018',
-                'email' => 'spv.reg2@motiva.com',
-                'position' => $posSupervisor,
-                'role' => 'Supervisor',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 2',
-                'name' => 'Ratna Sari',
-                'nip' => '199003142012012019',
-                'email' => 'hr.reg2@motiva.com',
-                'position' => $posHR,
-                'role' => 'HR',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 2',
-                'name' => 'Dian Wahyuni',
-                'nip' => '199212012015022020',
-                'email' => 'dian.wahyuni@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 2',
-                'name' => 'Bayu Saputra',
-                'nip' => '199406182017011021',
-                'email' => 'bayu.saputra@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 2',
-                'name' => 'Tri Utami',
-                'nip' => '199511092018012022',
-                'email' => 'tri.utami@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 2',
-                'name' => 'Wahyu Hidayat',
-                'nip' => '199609252019021023',
-                'email' => 'wahyu.hidayat@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-
-            // ==================== UNIT 4: Regional 3 (7 Pegawai) ====================
-            [
-                'unit' => 'Regional 3',
-                'name' => 'Dedi Supriadi',
-                'nip' => '198309142007011024',
-                'email' => 'manager.reg3@motiva.com',
-                'position' => $posManager,
-                'role' => 'Manager',
-                'is_manager' => true,
-            ],
-            [
-                'unit' => 'Regional 3',
-                'name' => 'Suryanto',
-                'nip' => '198801202011021025',
-                'email' => 'spv.reg3@motiva.com',
-                'position' => $posSupervisor,
-                'role' => 'Supervisor',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 3',
-                'name' => 'Nita Rahmawati',
-                'nip' => '199105162013012026',
-                'email' => 'hr.reg3@motiva.com',
-                'position' => $posHR,
-                'role' => 'HR',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 3',
-                'name' => 'Ilham Pratama',
-                'nip' => '199307222016011027',
-                'email' => 'ilham.pratama@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 3',
-                'name' => 'Ayu Wulandari',
-                'nip' => '199503112018012028',
-                'email' => 'ayu.wulandari@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 3',
-                'name' => 'Bagus Kurniawan',
-                'nip' => '199608142019011029',
-                'email' => 'bagus.kurniawan@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
-            [
-                'unit' => 'Regional 3',
-                'name' => 'Cindy Claudia',
-                'nip' => '199710052020012030',
-                'email' => 'cindy.claudia@motiva.com',
-                'position' => $posStaff,
-                'role' => 'Staff',
-                'is_manager' => false,
-            ],
+        $positionsData = [
+            'Manager' => ['code' => 'MGR', 'level' => 1],
+            'Supervisor' => ['code' => 'SPV', 'level' => 2],
+            'HR Specialist' => ['code' => 'HR', 'level' => 3],
+            'Driver' => ['code' => 'DRV', 'level' => 4],
+            'Manajer Kontrak' => ['code' => 'MGR-KTR', 'level' => 4],
+            'Sekretaris Kontrak' => ['code' => 'SEK-KTR', 'level' => 4],
+            'Data Spatial Quality Assurance SSWJ AOSS - Regional 1' => ['code' => 'DS-QA-R1', 'level' => 4],
+            'Data Spatial Quality Assurance SSWJ AOL - Regional 2' => ['code' => 'DS-QA-R2', 'level' => 4],
+            'Data Spatial Quality Assurance SSWJ AOJBB - Regional 3' => ['code' => 'DS-QA-R3', 'level' => 4],
+            'Data Spatial Quality Assurance SHG' => ['code' => 'DS-QA-SHG', 'level' => 4],
+            'Data Non Spatial Quality Assurance Regional 1' => ['code' => 'DNS-QA-R1', 'level' => 4],
+            'Data Non Spatial Quality Assurance Regional 2' => ['code' => 'DNS-QA-R2', 'level' => 4],
+            'Data Non Spatial Quality Assurance Regional 3' => ['code' => 'DNS-QA-R3', 'level' => 4],
+            'Operator Basis Data Spatial Regional 1' => ['code' => 'OBD-S-R1', 'level' => 4],
+            'Operator Basis Data Spatial Regional 2' => ['code' => 'OBD-S-R2', 'level' => 4],
+            'Operator Basis Data Spatial Regional 3' => ['code' => 'OBD-S-R3', 'level' => 4],
+            'Operator Dokumen Teknis SHG' => ['code' => 'ODT-SHG', 'level' => 4],
+            'Operator Dokumen Teknis Digital' => ['code' => 'ODT-DIG', 'level' => 4],
+            'Operator Basis Data Asbuilt Drawing' => ['code' => 'OBD-ABD', 'level' => 4],
+            'Operator Basis Data Non Spatial Regional 1' => ['code' => 'OBD-NS-R1', 'level' => 4],
+            'Operator Basis Data Non Spatial Regional 2' => ['code' => 'OBD-NS-R2', 'level' => 4],
+            'Operator Basis Data Non Spatial Regional 3' => ['code' => 'OBD-NS-R3', 'level' => 4],
+            'SAP PM Operator PGN' => ['code' => 'SAP-PGN', 'level' => 4],
+            'SAP PM Operator SHG' => ['code' => 'SAP-SHG', 'level' => 4],
+            'System Analyst -All System' => ['code' => 'SA-ALL', 'level' => 4],
+            'Programmer - AIMS MIRACLE' => ['code' => 'PRG-AIM', 'level' => 4],
+            'Programmer - NICO, PICO' => ['code' => 'PRG-NPO', 'level' => 4],
+            'Programmer - MOC, CR7, PSSR' => ['code' => 'PRG-MCP', 'level' => 4],
+            'Programmer - BI Dashboard SHG' => ['code' => 'PRG-BI-SHG', 'level' => 4],
+            'Programmer - BI Dasboard SH Pertamina' => ['code' => 'PRG-BI-SHP', 'level' => 4],
         ];
 
-        // 7. Insert Managers First so we can link manager_id
-        $unitManagers = [];
-        foreach ($employeeData as $data) {
-            if ($data['is_manager']) {
-                $user = User::firstOrCreate(
-                    ['email' => $data['email']],
-                    [
-                        'name' => $data['name'],
-                        'password' => Hash::make('password'),
-                        'email_verified_at' => now(),
-                    ]
-                );
-                $user->syncRoles([$data['role']]);
-
-                $dept = $units[$data['unit']];
-
-                $employee = Employee::firstOrCreate(
-                    ['identity_number' => $data['nip']],
-                    [
-                        'user_id' => $user->id,
-                        'organization_id' => $org->id,
-                        'department_id' => $dept->id,
-                        'position_id' => $data['position']->id,
-                        'manager_id' => null,
-                        'name' => $data['name'],
-                    ]
-                );
-                $employee->update([
-                    'user_id' => $user->id,
-                    'organization_id' => $org->id,
-                    'department_id' => $dept->id,
-                    'position_id' => $data['position']->id,
-                    'name' => $data['name'],
-                ]);
-
-                $unitManagers[$data['unit']] = $employee;
-            }
+        $positions = [];
+        foreach ($positionsData as $name => $meta) {
+            $positions[$name] = Position::firstOrCreate(
+                ['code' => $meta['code']],
+                ['name' => $name, 'level' => $meta['level']]
+            );
         }
 
-        // 8. Insert Other Employees (Supervisor, HR, Staff) linked to their Unit Manager
-        foreach ($employeeData as $data) {
-            if (! $data['is_manager']) {
-                $user = User::firstOrCreate(
-                    ['email' => $data['email']],
-                    [
-                        'name' => $data['name'],
-                        'password' => Hash::make('password'),
-                        'email_verified_at' => now(),
-                    ]
-                );
-                $user->syncRoles([$data['role']]);
+        // 6. Buat Atasan: Manager (M Nuramzan Iftari)
+        $managerUser = User::firstOrCreate(
+            ['email' => 'nuramzan.iftari@motiva.com'],
+            [
+                'name' => 'M Nuramzan Iftari',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ]
+        );
+        $managerUser->syncRoles([$roleManager]);
 
-                $dept = $units[$data['unit']];
-                $manager = $unitManagers[$data['unit']] ?? null;
+        $managerEmployee = Employee::firstOrCreate(
+            ['identity_number' => '125000001'],
+            [
+                'user_id' => $managerUser->id,
+                'organization_id' => $org->id,
+                'department_id' => $deptJakarta->id,
+                'position_id' => $positions['Manager']->id,
+                'manager_id' => null,
+                'name' => 'M Nuramzan Iftari',
+            ]
+        );
+        $managerEmployee->update([
+            'user_id' => $managerUser->id,
+            'department_id' => $deptJakarta->id,
+            'position_id' => $positions['Manager']->id,
+            'manager_id' => null,
+            'name' => 'M Nuramzan Iftari',
+        ]);
 
-                $employee = Employee::firstOrCreate(
-                    ['identity_number' => $data['nip']],
-                    [
-                        'user_id' => $user->id,
-                        'organization_id' => $org->id,
-                        'department_id' => $dept->id,
-                        'position_id' => $data['position']->id,
-                        'manager_id' => $manager?->id,
-                        'name' => $data['name'],
-                    ]
-                );
-                $employee->update([
+        // 7. Buat Atasan: Supervisor 1 (Ikhsan Aditya Wardana)
+        $spvIkhsanUser = User::firstOrCreate(
+            ['email' => 'ikhsan.wardana@motiva.com'],
+            [
+                'name' => 'Ikhsan Aditya Wardana',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ]
+        );
+        $spvIkhsanUser->syncRoles([$roleSupervisor]);
+
+        $spvIkhsanEmployee = Employee::firstOrCreate(
+            ['identity_number' => '125000002'],
+            [
+                'user_id' => $spvIkhsanUser->id,
+                'organization_id' => $org->id,
+                'department_id' => $deptJakarta->id,
+                'position_id' => $positions['Supervisor']->id,
+                'manager_id' => $managerEmployee->id,
+                'name' => 'Ikhsan Aditya Wardana',
+            ]
+        );
+        $spvIkhsanEmployee->update([
+            'user_id' => $spvIkhsanUser->id,
+            'department_id' => $deptJakarta->id,
+            'position_id' => $positions['Supervisor']->id,
+            'manager_id' => $managerEmployee->id,
+            'name' => 'Ikhsan Aditya Wardana',
+        ]);
+
+        // 8. Buat Atasan: Supervisor 2 (Didiet Pradityo)
+        $spvDidietUser = User::firstOrCreate(
+            ['email' => 'didiet.pradityo@motiva.com'],
+            [
+                'name' => 'Didiet Pradityo',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ]
+        );
+        $spvDidietUser->syncRoles([$roleSupervisor]);
+
+        $spvDidietEmployee = Employee::firstOrCreate(
+            ['identity_number' => '125000003'],
+            [
+                'user_id' => $spvDidietUser->id,
+                'organization_id' => $org->id,
+                'department_id' => $deptJakarta->id,
+                'position_id' => $positions['Supervisor']->id,
+                'manager_id' => $managerEmployee->id,
+                'name' => 'Didiet Pradityo',
+            ]
+        );
+        $spvDidietEmployee->update([
+            'user_id' => $spvDidietUser->id,
+            'department_id' => $deptJakarta->id,
+            'position_id' => $positions['Supervisor']->id,
+            'manager_id' => $managerEmployee->id,
+            'name' => 'Didiet Pradityo',
+        ]);
+
+        // 9. Buat Akun HR (hr@motiva.com)
+        $hrUser = User::firstOrCreate(
+            ['email' => 'hr@motiva.com'],
+            [
+                'name' => 'HR Motiva',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ]
+        );
+        $hrUser->syncRoles([$roleHR]);
+
+        $hrEmployee = Employee::firstOrCreate(
+            ['identity_number' => '125000004'],
+            [
+                'user_id' => $hrUser->id,
+                'organization_id' => $org->id,
+                'department_id' => $deptJakarta->id,
+                'position_id' => $positions['HR Specialist']->id,
+                'manager_id' => $managerEmployee->id,
+                'name' => 'HR Motiva',
+            ]
+        );
+        $hrEmployee->update([
+            'user_id' => $hrUser->id,
+            'department_id' => $deptJakarta->id,
+            'position_id' => $positions['HR Specialist']->id,
+            'manager_id' => $managerEmployee->id,
+            'name' => 'HR Motiva',
+        ]);
+
+        // Lookup map atasan untuk staf
+        $leaderLookup = [
+            'Ikhsan Aditya Wardana' => $spvIkhsanEmployee->id,
+            'Didiet Pradityo' => $spvDidietEmployee->id,
+            'M Nuramzan Iftari' => $managerEmployee->id,
+        ];
+
+        // 10. Daftar 32 Sampel Pegawai
+        $rawEmployees = [
+            ['nip' => '125770077', 'name' => 'Triyono', 'position' => 'Driver', 'area' => 'Jakarta', 'supervisor' => null, 'manager' => 'M Nuramzan Iftari', 'email' => 'triyono@motiva.com'],
+            ['nip' => '126910050', 'name' => 'Sutikno', 'position' => 'Driver', 'area' => 'Jakarta', 'supervisor' => null, 'manager' => 'M Nuramzan Iftari', 'email' => 'sutikno@motiva.com'],
+            ['nip' => '125900071', 'name' => 'Panji Abyul Novian', 'position' => 'Manajer Kontrak', 'area' => 'Jakarta', 'supervisor' => 'Ikhsan Aditya Wardana', 'manager' => 'M Nuramzan Iftari', 'email' => 'panji.novian@motiva.com'],
+            ['nip' => '125970065', 'name' => 'Maria Ulfah', 'position' => 'Sekretaris Kontrak', 'area' => 'Jakarta', 'supervisor' => 'Ikhsan Aditya Wardana', 'manager' => 'M Nuramzan Iftari', 'email' => 'maria.ulfah@motiva.com'],
+            ['nip' => '125980056', 'name' => 'Chairunnisa', 'position' => 'Data Spatial Quality Assurance SSWJ AOSS - Regional 1', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'chairunnisa@motiva.com'],
+            ['nip' => '125960076', 'name' => 'Siti Fatimah', 'position' => 'Data Spatial Quality Assurance SSWJ AOL - Regional 2', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'siti.fatimah@motiva.com'],
+            ['nip' => '125950064', 'name' => 'Lutfiana Damayanti', 'position' => 'Data Spatial Quality Assurance SSWJ AOJBB - Regional 3', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'lutfiana.damayanti@motiva.com'],
+            ['nip' => '125920052', 'name' => 'Agung Nugraha', 'position' => 'Data Spatial Quality Assurance SHG', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'agung.nugraha@motiva.com'],
+            ['nip' => '125880075', 'name' => 'Shahriar Aditya Putra', 'position' => 'Data Non Spatial Quality Assurance Regional 1', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'shahriar.putra@motiva.com'],
+            ['nip' => '125940055', 'name' => 'Aris Dwi Yunanto', 'position' => 'Data Non Spatial Quality Assurance Regional 2', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'aris.yunanto@motiva.com'],
+            ['nip' => '125910073', 'name' => 'Rizki Sandy', 'position' => 'Data Non Spatial Quality Assurance Regional 3', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'rizki.sandy@motiva.com'],
+            ['nip' => '125990057', 'name' => 'Dewi Fitriana', 'position' => 'Operator Basis Data Spatial Regional 1', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'dewi.fitriana@motiva.com'],
+            ['nip' => '125980139', 'name' => 'Mita Septiana', 'position' => 'Operator Basis Data Spatial Regional 1', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'mita.septiana@motiva.com'],
+            ['nip' => '125970070', 'name' => 'Nuril Syahida', 'position' => 'Operator Basis Data Spatial Regional 2', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'nuril.syahida@motiva.com'],
+            ['nip' => '125010062', 'name' => 'Ika Novia Taryuni', 'position' => 'Operator Basis Data Spatial Regional 2', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'ika.taryuni@motiva.com'],
+            ['nip' => '125980126', 'name' => 'Salma Hayati Inda Robbi', 'position' => 'Operator Basis Data Spatial Regional 2', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'salma.robbi@motiva.com'],
+            ['nip' => '125980072', 'name' => 'Risa Erfianti', 'position' => 'Operator Basis Data Spatial Regional 3', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'risa.erfianti@motiva.com'],
+            ['nip' => '126010139', 'name' => 'Rachma Dewi Zulkarnain', 'position' => 'Operator Basis Data Spatial Regional 3', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'rachma.zulkarnain@motiva.com'],
+            ['nip' => '126000024', 'name' => 'Alfian Akbar Maulana', 'position' => 'Operator Dokumen Teknis SHG', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'alfian.maulana@motiva.com'],
+            ['nip' => '126780025', 'name' => 'Jufraini', 'position' => 'Operator Dokumen Teknis Digital', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'jufraini@motiva.com'],
+            ['nip' => '126990002', 'name' => 'Dini Tiara', 'position' => 'Operator Basis Data Asbuilt Drawing', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'dini.tiara@motiva.com'],
+            ['nip' => '125920054', 'name' => 'Arie Masyaid Lubis', 'position' => 'Operator Basis Data Non Spatial Regional 1', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'arie.lubis@motiva.com'],
+            ['nip' => '125880074', 'name' => 'Saldy Michael', 'position' => 'Operator Basis Data Non Spatial Regional 2', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'saldy.michael@motiva.com'],
+            ['nip' => '125970060', 'name' => 'Fatikunada', 'position' => 'Operator Basis Data Non Spatial Regional 3', 'area' => 'Jakarta', 'supervisor' => 'Didiet Pradityo', 'manager' => 'M Nuramzan Iftari', 'email' => 'fatikunada@motiva.com'],
+            ['nip' => '125760058', 'name' => 'Dolly Ravindra', 'position' => 'SAP PM Operator PGN', 'area' => 'Jakarta', 'supervisor' => 'Ikhsan Aditya Wardana', 'manager' => 'M Nuramzan Iftari', 'email' => 'dolly.ravindra@motiva.com'],
+            ['nip' => '125890066', 'name' => 'Muhajirin', 'position' => 'SAP PM Operator SHG', 'area' => 'Jakarta', 'supervisor' => 'Ikhsan Aditya Wardana', 'manager' => 'M Nuramzan Iftari', 'email' => 'muhajirin@motiva.com'],
+            ['nip' => '125890061', 'name' => 'Fikri Achmad', 'position' => 'System Analyst -All System', 'area' => 'Jakarta', 'supervisor' => 'Ikhsan Aditya Wardana', 'manager' => 'M Nuramzan Iftari', 'email' => 'fikri.achmad@motiva.com'],
+            ['nip' => '125010128', 'name' => 'Andika Bagus Pambudi', 'position' => 'Programmer - AIMS MIRACLE', 'area' => 'Jakarta', 'supervisor' => 'Ikhsan Aditya Wardana', 'manager' => 'M Nuramzan Iftari', 'email' => 'andika.pambudi@motiva.com'],
+            ['nip' => '125980059', 'name' => 'Dzaki Fatchur Rachman', 'position' => 'Programmer - NICO, PICO', 'area' => 'Jakarta', 'supervisor' => 'Ikhsan Aditya Wardana', 'manager' => 'M Nuramzan Iftari', 'email' => 'dzaki.rachman@motiva.com'],
+            ['nip' => '125900078', 'name' => 'Saifudin Zuhri', 'position' => 'Programmer - MOC, CR7, PSSR', 'area' => 'Jakarta', 'supervisor' => 'Ikhsan Aditya Wardana', 'manager' => 'M Nuramzan Iftari', 'email' => 'saifudin.zuhri@motiva.com'],
+            ['nip' => '125890068', 'name' => 'Novyan Hari Santoso', 'position' => 'Programmer - BI Dashboard SHG', 'area' => 'Jakarta', 'supervisor' => 'Ikhsan Aditya Wardana', 'manager' => 'M Nuramzan Iftari', 'email' => 'novyan.santoso@motiva.com'],
+            ['nip' => '125960067', 'name' => 'Novi Dwi Astuti', 'position' => 'Programmer - BI Dasboard SH Pertamina', 'area' => 'Jakarta', 'supervisor' => 'Ikhsan Aditya Wardana', 'manager' => 'M Nuramzan Iftari', 'email' => 'novi.astuti@motiva.com'],
+        ];
+
+        // 11. Simpan 32 Pegawai beserta User akun (role: Staff)
+        foreach ($rawEmployees as $data) {
+            $user = User::firstOrCreate(
+                ['email' => $data['email']],
+                [
+                    'name' => $data['name'],
+                    'password' => Hash::make('password'),
+                    'email_verified_at' => now(),
+                ]
+            );
+            $user->syncRoles([$roleStaff]);
+
+            // Tentukan atasan langsung: Supervisor jika ada, atau Manager jika kosong
+            $directManagerId = ! empty($data['supervisor'])
+                ? ($leaderLookup[$data['supervisor']] ?? $managerEmployee->id)
+                : $managerEmployee->id;
+
+            $pos = $positions[$data['position']] ?? $positions['Driver'];
+
+            $employee = Employee::firstOrCreate(
+                ['identity_number' => $data['nip']],
+                [
                     'user_id' => $user->id,
                     'organization_id' => $org->id,
-                    'department_id' => $dept->id,
-                    'position_id' => $data['position']->id,
-                    'manager_id' => $manager?->id,
+                    'department_id' => $deptJakarta->id,
+                    'position_id' => $pos->id,
+                    'manager_id' => $directManagerId,
                     'name' => $data['name'],
-                ]);
-            }
+                ]
+            );
+
+            $employee->update([
+                'user_id' => $user->id,
+                'organization_id' => $org->id,
+                'department_id' => $deptJakarta->id,
+                'position_id' => $pos->id,
+                'manager_id' => $directManagerId,
+                'name' => $data['name'],
+            ]);
         }
     }
 }

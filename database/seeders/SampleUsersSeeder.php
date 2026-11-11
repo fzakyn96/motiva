@@ -40,7 +40,6 @@ class SampleUsersSeeder extends Seeder
 
         $roles = [
             'Superadmin' => 'superadmin@motiva.com',
-            'Admin' => 'admin@motiva.com',
             'Manager' => 'manager@motiva.com',
             'Supervisor' => 'supervisor@motiva.com',
             'HR' => 'hr@motiva.com',

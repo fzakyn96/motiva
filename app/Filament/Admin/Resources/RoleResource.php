@@ -2,10 +2,12 @@
 
 namespace App\Filament\Admin\Resources;
 
+use App\Filament\Admin\Clusters\HakAkses;
 use App\Filament\Admin\Resources\RoleResource\Pages;
 use Spatie\Permission\Models\Role;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Pages\SubNavigationPosition;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -14,27 +16,64 @@ class RoleResource extends Resource
 {
     protected static ?string $model = Role::class;
 
+    protected static ?string $cluster = HakAkses::class;
+    protected static SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
+
     protected static ?string $navigationIcon = 'heroicon-o-shield-check';
-    protected static ?string $navigationGroup = 'Manajemen Pengguna';
     protected static ?string $navigationLabel = 'Peran (Role)';
     protected static ?string $modelLabel = 'Peran';
     protected static ?string $pluralModelLabel = 'Peran';
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
+
+    public static function canViewAny(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) return false;
+        return $user->hasAnyRole(['Superadmin', 'Admin']);
+    }
+
+    public static function getNavigationBadge(): ?string
+    {
+        $count = static::getEloquentQuery()->count();
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'info';
+    }
+
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return 'Total Peran (Role)';
+    }
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('name')
-                    ->label('Nama Peran')
-                    ->required()
-                    ->unique(ignoreRecord: true)
-                    ->maxLength(255),
-                Forms\Components\Select::make('permissions')
-                    ->label('Izin Akses (Permissions)')
-                    ->multiple()
-                    ->relationship('permissions', 'name')
-                    ->preload(),
+                Forms\Components\Section::make('Konfigurasi Peran & Izin Akses')
+                    ->icon('heroicon-o-shield-check')
+                    ->iconColor('primary')
+                    ->description('Tentukan nama peran (role) serta daftar izin akses (permissions) yang diberikan pada peran ini.')
+                    ->schema([
+                        Forms\Components\TextInput::make('name')
+                            ->label('Nama Peran (Role)')
+                            ->prefixIcon('heroicon-m-shield-check')
+                            ->placeholder('Contoh: Manager, Supervisor, HR, Staff')
+                            ->required()
+                            ->unique(ignoreRecord: true)
+                            ->maxLength(255),
+                        Forms\Components\Select::make('permissions')
+                            ->label('Daftar Izin Akses (Permissions)')
+                            ->prefixIcon('heroicon-m-key')
+                            ->multiple()
+                            ->searchable()
+                            ->relationship('permissions', 'name')
+                            ->preload()
+                            ->helperText('Pilih satu atau lebih izin akses operasional untuk peran ini.'),
+                    ])
+                    ->columns(1),
             ]);
     }
 
@@ -65,14 +104,23 @@ class RoleResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
-                    ->label('Ubah'),
+                    ->label('Ubah')
+                    ->icon('heroicon-o-pencil-square')
+                    ->button()
+                    ->size('sm')
+                    ->color('warning'),
                 Tables\Actions\DeleteAction::make()
-                    ->label('Hapus'),
+                    ->label('Hapus')
+                    ->icon('heroicon-o-trash')
+                    ->button()
+                    ->size('sm')
+                    ->color('danger'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->label('Hapus Terpilih'),
+                        ->label('Hapus Terpilih')
+                        ->icon('heroicon-o-trash'),
                 ]),
             ]);
     }

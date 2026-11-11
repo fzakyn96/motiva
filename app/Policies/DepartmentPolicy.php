@@ -9,26 +9,26 @@ class DepartmentPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['Admin', 'Superadmin', 'HR', 'Manager', 'Supervisor', 'Staff']);
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
     }
 
     public function view(User $user, Department $department): bool
     {
-        return $user->hasAnyRole(['Admin', 'Superadmin', 'HR', 'Manager', 'Supervisor', 'Staff']);
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
     }
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(['Admin', 'Superadmin', 'HR']);
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
     }
 
     public function update(User $user, Department $department): bool
     {
-        return $user->hasAnyRole(['Admin', 'Superadmin', 'HR']);
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
     }
 
     public function delete(User $user, Department $department): bool
     {
-        return $user->hasAnyRole(['Admin', 'Superadmin', 'HR']);
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
     }
 }
