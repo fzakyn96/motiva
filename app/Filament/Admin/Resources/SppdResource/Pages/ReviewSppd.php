@@ -324,6 +324,30 @@ class ReviewSppd extends ViewRecord
                 ])
                 ->action(fn (array $data) => $this->rejectSppd($data['notes'])),
 
+            Action::make('employee_approve')
+                ->label('Setujui & Tandatangani')
+                ->icon('heroicon-o-check-badge')
+                ->color('success')
+                ->visible(fn () => SppdResource::canEmployeeSign($this->getRecord()))
+                ->requiresConfirmation()
+                ->modalIcon('heroicon-o-clipboard-document-check')
+                ->modalHeading('Konfirmasi Persetujuan & Tanda Tangan SPPD')
+                ->modalDescription(function () {
+                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                    if (! $user?->hasConfiguredSignature()) {
+                        return 'PERHATIAN: Anda belum mengatur tanda tangan digital. Silakan atur tanda tangan terlebih dahulu di menu Pengaturan Tanda Tangan sebelum menyetujui SPPD ini.';
+                    }
+
+                    return 'Dengan menekan tombol "Ya, Setujui & Tandatangani", Anda menyetujui penugasan dan perhitungan biaya perjalanan dinas sesuai ketentuan perusahaan. Tanda tangan digital Anda akan otomatis dibubuhkan pada cetakan SPPD.';
+                })
+                ->modalSubmitActionLabel('Ya, Setujui & Tandatangani')
+                ->modalCancelActionLabel('Batal')
+                ->action(function (): void {
+                    if (SppdResource::performEmployeeSignature($this->getRecord())) {
+                        $this->redirect(SppdResource::getUrl('review', ['record' => $this->getRecord()]));
+                    }
+                }),
+
             Action::make('print')
                 ->label('Cetak')
                 ->icon('heroicon-o-printer')

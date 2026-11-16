@@ -38,6 +38,13 @@ class OfficialTravelRecapResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+
+        return (bool) $user?->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+    }
+
     public static function canViewAny(): bool
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
@@ -258,7 +265,7 @@ class OfficialTravelRecapResource extends Resource
                                     ->required()
                                     ->columnSpan(['default' => 1, 'md' => 2]),
                                 Forms\Components\TextInput::make('amount')
-                                    ->label('Jumlah Biaya (IDR)')
+                                    ->label('Jumlah Biaya')
                                     ->numeric()
                                     ->prefix('Rp')
                                     ->default(0)
@@ -288,7 +295,7 @@ class OfficialTravelRecapResource extends Resource
                         ->limit(55),
                     Tables\Columns\TextColumn::make('grand_total')
                         ->label('Total Biaya Pekerjaan + Fee')
-                        ->money('IDR', locale: 'id')
+                        ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                         ->badge()
                         ->color('success')
                         ->grow(false),
@@ -305,10 +312,10 @@ class OfficialTravelRecapResource extends Resource
                                 ->color('info'),
                             Tables\Columns\TextColumn::make('total_work_cost')
                                 ->description('Total Biaya Pekerjaan', position: 'above')
-                                ->money('IDR', locale: 'id'),
+                                ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
                             Tables\Columns\TextColumn::make('manfee_amount')
                                 ->description('Management Fee', position: 'above')
-                                ->money('IDR', locale: 'id'),
+                                ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
                             Tables\Columns\TextColumn::make('created_at')
                                 ->description('Dibuat Pada', position: 'above')
                                 ->dateTime('d/m/Y H:i'),
@@ -357,13 +364,13 @@ class OfficialTravelRecapResource extends Resource
                                 'Menunggu Pemeriksaan Manajer', 'Menunggu Division Head' => 'warning',
                                 default => 'gray',
                             }),
-                        Infolists\Components\TextEntry::make('total_work_cost')->label('Total Biaya Pekerjaan')->money('IDR', locale: 'id'),
+                        Infolists\Components\TextEntry::make('total_work_cost')->label('Total Biaya Pekerjaan')->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
                         Infolists\Components\TextEntry::make('manfee_amount')
                             ->label('Management Fee (' . rtrim(rtrim(number_format((float) ($infolist->getRecord()?->manfee_percent ?? 6), 2, '.', ''), '0'), '.') . '%)')
-                            ->money('IDR', locale: 'id'),
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
                         Infolists\Components\TextEntry::make('grand_total')
                             ->label('Total Biaya Akhir')
-                            ->money('IDR', locale: 'id')
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                             ->weight('bold')
                             ->color('success'),
                     ]),
@@ -384,8 +391,8 @@ class OfficialTravelRecapResource extends Resource
                                     ->label('Uraian Pekerjaan')
                                     ->columnSpan(['default' => 1, 'md' => 2]),
                                 Infolists\Components\TextEntry::make('amount')
-                                    ->label('Total Biaya (IDR)')
-                                    ->money('IDR', locale: 'id')
+                                    ->label('Total Biaya')
+                                    ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                                     ->weight('bold')
                                     ->color('success'),
                                 Infolists\Components\TextEntry::make('cost_breakdown')

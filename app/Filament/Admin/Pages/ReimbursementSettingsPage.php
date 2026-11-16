@@ -46,7 +46,6 @@ class ReimbursementSettingsPage extends Page implements HasForms
     {
         $setting = ReimbursementSetting::current();
         $this->form->fill([
-            'transport_service_fee_percent' => $setting->transport_service_fee_percent,
             'transport_manfee_percent' => $setting->transport_manfee_percent,
             'travel_manfee_percent' => $setting->travel_manfee_percent,
         ]);
@@ -56,28 +55,19 @@ class ReimbursementSettingsPage extends Page implements HasForms
     {
         return $form
             ->schema([
-                Section::make('Persentase Service Fee & Management Fee (Manfee)')
+                Section::make('Persentase Management Fee (Manfee)')
                     ->icon('heroicon-o-percent-badge')
                     ->iconColor('primary')
-                    ->description('Atur persentase default Service Fee dan Management Fee untuk Rekapitulasi Biaya Reimbursement Transportasi & Akomodasi serta Perjalanan Dinas.')
+                    ->description('Atur persentase default Management Fee untuk Rekap Tiket & Akomodasi serta Rekap Perjalanan Dinas.')
                     ->schema([
-                        TextInput::make('transport_service_fee_percent')
-                            ->label('Service Fee Transportasi & Akomodasi (%)')
-                            ->numeric()
-                            ->step('0.01')
-                            ->minValue(0)
-                            ->maxValue(100)
-                            ->suffix('%')
-                            ->helperText('Jika > 0%, nominal Service Fee per item akan dihitung otomatis dari Jumlah × persentase ini (tetap dapat disesuaikan manual per item). Isi 0 jika Service Fee diinput manual per item.')
-                            ->required(),
                         TextInput::make('transport_manfee_percent')
-                            ->label('Manfee Transportasi & Akomodasi (%)')
+                            ->label('Manfee Tiket & Akomodasi (%)')
                             ->numeric()
                             ->step('0.01')
                             ->minValue(0)
                             ->maxValue(100)
                             ->suffix('%')
-                            ->helperText('Default 5% dari Total Biaya pada Rekapitulasi Biaya Reimbursement Transportasi dan Akomodasi.')
+                            ->helperText('Default 5% dari Total Biaya pada Rekap Tiket & Akomodasi.')
                             ->required(),
                         TextInput::make('travel_manfee_percent')
                             ->label('Management Fee Perjalanan Dinas (%)')
@@ -86,10 +76,10 @@ class ReimbursementSettingsPage extends Page implements HasForms
                             ->minValue(0)
                             ->maxValue(100)
                             ->suffix('%')
-                            ->helperText('Default 6% dari Total Biaya Pekerjaan pada Rekapitulasi Biaya Reimbursement Perjalanan Dinas.')
+                            ->helperText('Default 6% dari Total Biaya Pekerjaan pada Rekap Perjalanan Dinas.')
                             ->required(),
                     ])
-                    ->columns(['default' => 1, 'md' => 3]),
+                    ->columns(['default' => 1, 'md' => 2]),
             ])
             ->statePath('data');
     }
@@ -99,7 +89,6 @@ class ReimbursementSettingsPage extends Page implements HasForms
         $state = $this->form->getState();
 
         ReimbursementSetting::current()->update([
-            'transport_service_fee_percent' => (float) ($state['transport_service_fee_percent'] ?? 0),
             'transport_manfee_percent' => (float) ($state['transport_manfee_percent'] ?? 5),
             'travel_manfee_percent' => (float) ($state['travel_manfee_percent'] ?? 6),
         ]);

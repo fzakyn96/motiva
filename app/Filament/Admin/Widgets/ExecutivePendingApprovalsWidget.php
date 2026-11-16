@@ -3,11 +3,16 @@
 namespace App\Filament\Admin\Widgets;
 
 use App\Filament\Admin\Resources\MemoResource;
+use App\Filament\Admin\Resources\OfficialTravelRecapResource;
+use App\Filament\Admin\Resources\SppdCostApprovalResource;
 use App\Filament\Admin\Resources\SppdResource;
+use App\Filament\Admin\Resources\TransportAccommodationRecapResource;
 use App\Models\ApprovalRequest;
 use App\Models\Memo;
-use App\Models\Reimbursement;
+use App\Models\OfficialTravelRecap;
 use App\Models\Sppd;
+use App\Models\SppdCost;
+use App\Models\TransportAccommodationRecap;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
@@ -24,7 +29,7 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         if (! $user) return false;
-        return $user->hasAnyRole(['Manager', 'Supervisor', 'Superadmin', 'Admin', 'HR']);
+        return $user->hasAnyRole(['Division Head', 'Manager', 'Supervisor', 'Superadmin', 'Admin', 'HR']);
     }
 
     public function table(Table $table): Table
@@ -32,24 +37,28 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
         $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR']);
+        $isDivisionHeadOnly = $user?->hasRole('Division Head') && ! $user->hasAnyRole(['Manager', 'Superadmin', 'Admin', 'HR']);
 
         $query = ApprovalRequest::query()
             ->where('status', 'pending')
             ->latest('id');
 
-        if (! $isAllAccess && $employee) {
-            $isSupervisorOnly = $user?->hasRole('Supervisor') && ! $user->hasAnyRole(['Manager', 'Superadmin', 'Admin', 'HR']);
+        if ($isDivisionHeadOnly) {
+            $query->whereIn('document_type', [TransportAccommodationRecap::class, OfficialTravelRecap::class]);
+        } elseif (! $isAllAccess && $employee) {
+            $isSupervisorOnly = $user?->hasRole('Supervisor') && ! $user->hasAnyRole(['Manager', 'Division Head', 'Superadmin', 'Admin', 'HR']);
 
             if ($isSupervisorOnly) {
-                // Supervisor only approves SPPD
-                $query->where('document_type', Sppd::class)
-                    ->whereHasMorph('document', [Sppd::class], function (Builder $sq) use ($employee) {
-                        $sq->whereHas('employee', function ($eq) use ($employee) {
-                            $eq->where('department_id', $employee->department_id)
-                                ->orWhere('manager_id', $employee->id)
-                                ->orWhere('id', $employee->id);
-                        });
+                // Supervisor only approves SPPD at Step 1 (Supervisor step still pending)
+                $query->where('document_type', Sppd::class);
+                \App\Filament\Admin\Resources\SppdApprovalResource::applyActionablePendingScope($query, $user);
+                $query->whereHasMorph('document', [Sppd::class], function (Builder $sq) use ($employee) {
+                    $sq->whereHas('employee', function ($eq) use ($employee) {
+                        $eq->where('department_id', $employee->department_id)
+                            ->orWhere('manager_id', $employee->id)
+                            ->orWhere('id', $employee->id);
                     });
+                });
             } else {
                 $query->where(function (Builder $q) use ($employee) {
                     // 1. Memo
@@ -72,16 +81,26 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                                 });
                             });
                     })
-                    // 3. Reimbursement
+                    // 3. Biaya SPPD
                     ->orWhere(function (Builder $sub) use ($employee) {
-                        $sub->where('document_type', Reimbursement::class)
-                            ->whereHasMorph('document', [Reimbursement::class], function (Builder $rq) use ($employee) {
-                                $rq->whereHas('employee', function ($eq) use ($employee) {
+                        $sub->where('document_type', SppdCost::class)
+                            ->whereHasMorph('document', [SppdCost::class], function (Builder $cq) use ($employee) {
+                                $cq->whereHas('sppd.employee', function ($eq) use ($employee) {
                                     $eq->where('department_id', $employee->department_id)
                                         ->orWhere('manager_id', $employee->id)
                                         ->orWhere('id', $employee->id);
                                 });
                             });
+                    })
+                    // 4. Rekap Tiket & Akomodasi
+                    ->orWhere(function (Builder $sub) use ($employee) {
+                        $sub->where('document_type', TransportAccommodationRecap::class)
+                            ->when($employee->department_id, fn (Builder $q2) => $q2->whereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $rq) => $rq->where('department_id', $employee->department_id)));
+                    })
+                    // 4. Rekap Perjalanan Dinas
+                    ->orWhere(function (Builder $sub) use ($employee) {
+                        $sub->where('document_type', OfficialTravelRecap::class)
+                            ->when($employee->department_id, fn (Builder $q2) => $q2->whereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $rq) => $rq->where('department_id', $employee->department_id)));
                     });
                 });
             }
@@ -97,7 +116,9 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                         return match ($state) {
                             Memo::class => 'MEMO',
                             Sppd::class => 'SPPD',
-                            Reimbursement::class => 'REIMBURSEMENT',
+                            SppdCost::class => 'BIAYA SPPD',
+                            TransportAccommodationRecap::class => 'REKAP TIKET',
+                            OfficialTravelRecap::class => 'REKAP DINAS',
                             default => class_basename($state),
                         };
                     })
@@ -105,7 +126,9 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                         return match ($state) {
                             Memo::class => 'primary',
                             Sppd::class => 'warning',
-                            Reimbursement::class => 'success',
+                            SppdCost::class => 'danger',
+                            TransportAccommodationRecap::class => 'success',
+                            OfficialTravelRecap::class => 'info',
                             default => 'gray',
                         };
                     }),
@@ -125,8 +148,19 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                             return ($doc->sppd_number ?: 'SPPD') . ' • Ke ' . $dest;
                         }
 
-                        if ($doc instanceof Reimbursement) {
-                            return ($doc->reimbursement_number ?: 'Reimbursement') . ' • ' . ($doc->title ?: 'Klaim Biaya');
+                        if ($doc instanceof SppdCost) {
+                            $sppd = $doc->sppd;
+                            $empName = $sppd?->employee?->name ?? '-';
+                            $total = 'Rp ' . number_format((float) $doc->total_cost, 0, ',', '.');
+                            return ($sppd?->sppd_number ?: 'Biaya SPPD') . " • {$empName} ({$total})";
+                        }
+
+                        if ($doc instanceof TransportAccommodationRecap) {
+                            return ($doc->period_label ?: 'Rekap Tiket') . ' • ' . ($doc->work_name ?: 'Rekap Tiket & Akomodasi');
+                        }
+
+                        if ($doc instanceof OfficialTravelRecap) {
+                            return ($doc->period_label ?: 'Rekap Dinas') . ' • ' . ($doc->work_name ?: 'Rekap Perjalanan Dinas');
                         }
 
                         return '-';
@@ -177,7 +211,9 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                     ->options([
                         Memo::class => 'Memo Dinas',
                         Sppd::class => 'SPPD',
-                        Reimbursement::class => 'Reimbursement',
+                        SppdCost::class => 'Biaya SPPD',
+                        TransportAccommodationRecap::class => 'Rekap Tiket & Akomodasi',
+                        OfficialTravelRecap::class => 'Rekap Perjalanan Dinas',
                     ]),
             ])
             ->actions([
@@ -195,11 +231,20 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                         if ($doc instanceof Sppd) {
                             return SppdResource::getUrl('review', ['record' => $doc->id, 'from' => 'approvals']);
                         }
+                        if ($doc instanceof SppdCost) {
+                            return SppdCostApprovalResource::getUrl('index');
+                        }
+                        if ($doc instanceof TransportAccommodationRecap) {
+                            return TransportAccommodationRecapResource::getUrl('view', ['record' => $doc->id]);
+                        }
+                        if ($doc instanceof OfficialTravelRecap) {
+                            return OfficialTravelRecapResource::getUrl('view', ['record' => $doc->id]);
+                        }
                         return '#';
                     }),
             ])
             ->emptyStateHeading('Semua Beres! Tidak Ada Antrian Persetujuan')
-            ->emptyStateDescription('Seluruh pengajuan memo dinas, SPPD, dan klaim reimbursement di bawah wewenang Anda telah selesai ditinjau.')
+            ->emptyStateDescription('Seluruh pengajuan memo dinas, SPPD, dan rekap perjalanan dinas di bawah wewenang Anda telah selesai ditinjau.')
             ->emptyStateIcon('heroicon-o-check-badge')
             ->paginated([5, 10]);
     }

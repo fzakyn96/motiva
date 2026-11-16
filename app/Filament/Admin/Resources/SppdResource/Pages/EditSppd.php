@@ -93,8 +93,15 @@ class EditSppd extends EditRecord
         ];
     }
 
+    /**
+     * @var list<int|string>
+     */
+    protected array $selectedSiblingSppdIds = [];
+
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        $this->selectedSiblingSppdIds = $this->data['apply_to_sibling_sppd_ids'] ?? [];
+
         $currentStatus = $this->getRecord()?->status;
 
         // Status otomatis menyesuaikan: bila masih draft, saat disimpan otomatis menjadi pending
@@ -113,29 +120,51 @@ class EditSppd extends EditRecord
             (new \App\Observers\SppdObserver())->ensureApprovalRequestExists($record);
 
             $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-            $signerUser = $record->employee?->user ?? $user;
-            if ($signerUser && $signerUser->hasConfiguredSignature()) {
+            if ($user && (int) $record->employee?->user_id === (int) $user->id && $user->hasConfiguredSignature()) {
                 app(\App\Services\Signature\SignatureService::class)->signDocument(
                     $record,
-                    $record->employee ?? $user?->employee,
+                    $record->employee,
                     'requester',
                     'Menyetujui perhitungan biaya perjalanan dinas sesuai keputusan perusahaan',
-                    $signerUser
+                    $user
                 );
+            }
+        }
+
+        if (
+            ! empty($this->selectedSiblingSppdIds)
+            && \App\Models\SppdSetting::current()->isHrFiller()
+            && (\Filament\Facades\Filament::auth()->user() ?? auth()->user())?->hasAnyRole(['HR', 'Admin', 'Superadmin'])
+        ) {
+            $applied = SppdResource::applyFormToSiblings($record, $this->selectedSiblingSppdIds);
+            if ($applied > 0) {
+                \Filament\Notifications\Notification::make()
+                    ->title('SPPD Pegawai Lain Ikut Diajukan')
+                    ->body("Isian form SPPD berhasil diterapkan ke {$applied} pegawai lain pada Memo yang sama.")
+                    ->success()
+                    ->send();
             }
         }
     }
 
     protected function getFormActions(): array
     {
-        $isDraft = $this->getRecord()?->status === 'draft';
+        $record = $this->getRecord();
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        $isDraft = $record?->status === 'draft';
+        $isAssignedEmployee = $user && $record && (int) $record->employee?->user_id === (int) $user->id;
+        $requiresEmployeeConfirmation = $isDraft
+            && \App\Models\SppdSetting::current()->isStaffFiller()
+            && $isAssignedEmployee;
 
-        return [
-            Actions\Action::make('save')
-                ->label($isDraft ? 'Simpan & Ajukan SPPD' : 'Simpan Perubahan')
-                ->icon('heroicon-o-check')
-                ->color('primary')
-                ->requiresConfirmation($isDraft)
+        $saveAction = Actions\Action::make('save')
+            ->label($isDraft ? 'Simpan & Ajukan SPPD' : 'Simpan Perubahan')
+            ->icon('heroicon-o-check')
+            ->color('primary');
+
+        if ($requiresEmployeeConfirmation) {
+            $saveAction
+                ->requiresConfirmation()
                 ->modalIcon('heroicon-o-clipboard-document-check')
                 ->modalHeading('Konfirmasi Persetujuan Perhitungan Biaya SPPD')
                 ->modalDescription(function (): string {
@@ -148,7 +177,13 @@ class EditSppd extends EditRecord
                 })
                 ->modalSubmitActionLabel('Setuju')
                 ->modalCancelActionLabel('Batal')
-                ->action(fn () => $this->save()),
+                ->action(fn () => $this->save());
+        } else {
+            $saveAction->submit('save');
+        }
+
+        return [
+            $saveAction,
             $this->getCancelFormAction()
                 ->label('Kembali')
                 ->icon('heroicon-o-arrow-left'),

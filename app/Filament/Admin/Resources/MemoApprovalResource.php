@@ -27,7 +27,7 @@ class MemoApprovalResource extends Resource
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         if (! $user) return false;
-        return $user->hasAnyRole(['Superadmin', 'Admin', 'Manager', 'HR']);
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'Manager']);
     }
 
     public static function getNavigationBadge(): ?string

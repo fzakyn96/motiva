@@ -184,13 +184,13 @@ class ReimbursementLogResource extends Resource
 
                         Infolists\Components\TextEntry::make('total_claim_amount')
                             ->label('Total Klaim Diganti')
-                            ->money('IDR', locale: 'id')
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                             ->weight(FontWeight::Bold)
                             ->color('warning'),
 
                         Infolists\Components\TextEntry::make('total_amount')
                             ->label('Total Keseluruhan (Termasuk Kantor)')
-                            ->money('IDR', locale: 'id'),
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
                     ]),
             ]);
     }
@@ -231,7 +231,7 @@ class ReimbursementLogResource extends Resource
 
                 Tables\Columns\TextColumn::make('total_claim_amount')
                     ->label('Total Klaim')
-                    ->money('IDR', locale: 'id')
+                    ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                     ->sortable()
                     ->weight(FontWeight::Bold)
                     ->color('warning'),

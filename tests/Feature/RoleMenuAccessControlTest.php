@@ -72,6 +72,10 @@ class RoleMenuAccessControlTest extends TestCase
         $this->assertFalse(SppdResource::canViewAny(), 'Manager should not view generic SPPD list');
         $this->assertTrue(MemoApprovalResource::canViewAny(), 'Manager can access Persetujuan Memo');
         $this->assertTrue(SppdApprovalResource::canViewAny(), 'Manager can access Persetujuan SPPD');
+        $this->assertFalse(\App\Filament\Admin\Resources\TransportAccommodationRecapResource::shouldRegisterNavigation(), 'Manager must NOT see Keuangan -> Rekap Tiket menu');
+        $this->assertFalse(\App\Filament\Admin\Resources\OfficialTravelRecapResource::shouldRegisterNavigation(), 'Manager must NOT see Keuangan -> Rekap Perjalanan Dinas menu');
+        $this->assertFalse(SppdCostResource::canViewAny(), 'Manager must NOT access Keuangan -> Biaya SPPD');
+        $this->assertFalse(SppdRateStandardResource::canViewAny(), 'Manager must NOT access Keuangan -> Standar Tarif');
 
         // 2. Supervisor check
         $this->actingAs($this->supervisorUser);
@@ -104,8 +108,11 @@ class RoleMenuAccessControlTest extends TestCase
         $this->assertFalse(MemoLogResource::canViewAny(), 'HR must NOT access Log Memo');
         $this->assertTrue(SppdResource::shouldRegisterNavigation());
         $this->assertTrue(SppdResource::canViewAny());
-        $this->assertTrue(MemoApprovalResource::canViewAny());
-        $this->assertTrue(SppdApprovalResource::canViewAny());
+        $this->assertFalse(MemoApprovalResource::canViewAny(), 'HR must NOT access Persetujuan Memo');
+        $this->assertFalse(SppdApprovalResource::canViewAny(), 'HR must NOT access Persetujuan SPPD');
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdCostApprovalResource::canViewAny(), 'HR must NOT access Persetujuan Biaya SPPD');
+        $this->assertFalse(\App\Filament\Admin\Resources\TransportAccommodationApprovalResource::canViewAny(), 'HR must NOT access Persetujuan Rekap Tiket');
+        $this->assertFalse(\App\Filament\Admin\Resources\OfficialTravelApprovalResource::canViewAny(), 'HR must NOT access Persetujuan Rekap Perjalanan Dinas');
 
         // 5. Superadmin check (Superadmin CAN access Log Memo)
         $this->actingAs($this->superadminUser);

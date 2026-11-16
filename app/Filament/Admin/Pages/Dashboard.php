@@ -45,7 +45,7 @@ class Dashboard extends BaseDashboard
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
 
-        if ($user && $user->hasAnyRole(['Manager', 'Supervisor', 'Superadmin', 'Admin', 'HR'])) {
+        if ($user && $user->hasAnyRole(['Division Head', 'Manager', 'Supervisor', 'Superadmin', 'Admin', 'HR'])) {
             return [
                 DashboardWelcomeBannerWidget::class,
                 ExecutiveOverviewWidget::class,

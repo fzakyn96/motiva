@@ -59,16 +59,78 @@ class ManagerAuthorityResolver implements AuthorityResolver
 
     public function resolveApprovers(ApprovalRequest $request): mixed
     {
-        $requester = $request->requester;
-        if ($requester?->manager) {
-            if ($requester->manager->position?->level === 1) {
-                return $requester->manager_id;
-            }
-            if ($requester->manager->manager_id) {
-                return $requester->manager->manager_id;
+        return static::resolveManagerForEmployee(
+            $request->requester,
+            $request->requester?->department_id
+        )?->id;
+    }
+
+    public static function isManagerEmployee(?Employee $candidate): bool
+    {
+        if (! $candidate) {
+            return false;
+        }
+
+        $candidate->loadMissing(['position', 'user.roles']);
+
+        if ($candidate->user && $candidate->user->hasRole('Manager')) {
+            return true;
+        }
+
+        $isSupervisorOnly = ($candidate->position && (int) $candidate->position->level === 2)
+            || ($candidate->user && $candidate->user->hasRole('Supervisor') && ! $candidate->user->hasRole('Manager'));
+        if ($isSupervisorOnly) {
+            return false;
+        }
+
+        if ($candidate->position) {
+            $posName = strtoupper((string) $candidate->position->name);
+            $posCode = strtoupper((string) $candidate->position->code);
+            if ((int) $candidate->position->level === 1 || str_contains($posName, 'MANAGER') || str_contains($posName, 'MANAJER') || $posCode === 'MGR') {
+                return true;
             }
         }
 
-        return $request->requester?->manager_id;
+        return false;
+    }
+
+    public static function resolveManagerForEmployee(?Employee $employee, ?int $departmentId = null): ?Employee
+    {
+        $visited = [];
+        $current = $employee?->manager;
+        $depth = 0;
+
+        while ($current && $depth < 5 && ! in_array($current->id, $visited, true)) {
+            $visited[] = $current->id;
+            if (static::isManagerEmployee($current)) {
+                return $current;
+            }
+            $current = $current->manager;
+            $depth++;
+        }
+
+        $deptId = $departmentId ?? $employee?->department_id;
+        $managerQuery = fn () => Employee::with(['position', 'user.roles'])
+            ->where(function ($q) {
+                $q->whereHas('user.roles', fn ($rq) => $rq->where('name', 'Manager'))
+                    ->orWhereHas('position', fn ($pq) => $pq->where('level', 1)
+                        ->orWhere('name', 'like', '%Manager%')
+                        ->orWhere('name', 'like', '%Manajer%')
+                        ->orWhere('code', 'MGR'));
+            });
+
+        if ($deptId) {
+            $deptManager = $managerQuery()->where('department_id', $deptId)->first();
+            if ($deptManager) {
+                return $deptManager;
+            }
+        }
+
+        $globalManager = $managerQuery()->first();
+        if ($globalManager) {
+            return $globalManager;
+        }
+
+        return $employee?->manager;
     }
 }

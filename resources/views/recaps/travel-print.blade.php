@@ -59,7 +59,7 @@
                 <th class="num">NO.</th>
                 <th class="period">PERIODE</th>
                 <th>URAIAN PEKERJAAN</th>
-                <th class="money">JUMLAH BIAYA<br>(IDR)</th>
+                <th class="money">JUMLAH BIAYA</th>
             </tr>
         </thead>
         <tbody>

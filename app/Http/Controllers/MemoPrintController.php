@@ -30,18 +30,11 @@ class MemoPrintController extends Controller
 
         $manager = $approvedStep?->approver;
 
-        if (! $manager && $memo->creator?->manager_id) {
-            $manager = $memo->creator->manager;
-        }
-
-        if (! $manager && $memo->department_id) {
-            $manager = Employee::with('position')
-                ->where('department_id', $memo->department_id)
-                ->where(function ($q) {
-                    $q->whereHas('position', fn ($pq) => $pq->where('name', 'like', '%Manager%'))
-                      ->orWhereHas('user.roles', fn ($rq) => $rq->where('name', 'Manager'));
-                })
-                ->first();
+        if (! $manager) {
+            $manager = \App\Services\Approval\Resolvers\ManagerAuthorityResolver::resolveManagerForEmployee(
+                $memo->creator,
+                $memo->department_id
+            );
         }
 
         if (! $manager) {

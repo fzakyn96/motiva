@@ -16,11 +16,13 @@ use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Expense;
 use App\Models\Memo;
+use App\Models\OfficialTravelRecap;
 use App\Models\Organization;
 use App\Models\Position;
-use App\Models\Reimbursement;
 use App\Models\Sppd;
 use App\Models\SppdCost;
+use App\Models\TransportAccommodationRecap;
+use App\Models\TransportAccommodationRecapItem;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -102,12 +104,17 @@ class ExecutiveDashboardTest extends TestCase
         Livewire::test(Dashboard::class)
             ->assertSuccessful();
 
+        Livewire::test(DashboardWelcomeBannerWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Persetujuan Biaya SPPD');
+
         Livewire::test(ExecutiveOverviewWidget::class)
             ->assertSuccessful()
             ->assertSee('Antrian Persetujuan')
             ->assertSee('Perjalanan Dinas (SPPD)')
             ->assertSee('Realisasi Biaya SPPD')
-            ->assertSee('Klaim Reimbursement');
+            ->assertSee('Rekap Tiket & Akomodasi')
+            ->assertSee('Rekap Perjalanan Dinas');
 
         Livewire::test(ExecutivePendingApprovalsWidget::class)
             ->assertSuccessful();
@@ -237,47 +244,42 @@ class ExecutiveDashboardTest extends TestCase
             'total_cost' => 2200000,
         ]);
 
-        // 3. Reimbursement Pending & Approved
-        $reimbPending = Reimbursement::create([
-            'employee_id' => $this->staff->id,
+        // 3. Rekap Tiket & Akomodasi Pending Approval
+        $recap = TransportAccommodationRecap::create([
+            'department_id' => $this->dept->id,
+            'business_trip_id' => $trip->id,
+            'business_trip_ids' => [$trip->id],
+            'work_name' => 'Rekap Tiket Cilegon',
+            'period_label' => 'November 2026',
+            'period_month' => '2026-11',
+            'grouping_mode' => 'combined',
+            'creator_id' => $this->managerUser->id,
+        ]);
+        TransportAccommodationRecapItem::create([
+            'transport_accommodation_recap_id' => $recap->id,
             'sppd_id' => $sppd->id,
-            'title' => 'Reimbursement Bensin Tol',
-            'status' => 'pending',
+            'sppd_ids' => [$sppd->id],
+            'item_category' => 'transport',
+            'description' => 'Tiket Cilegon',
+            'amount' => 1500000,
+            'service_fee' => 150000,
+            'total_amount' => 1650000,
         ]);
-        Expense::create([
-            'reimbursement_id' => $reimbPending->id,
-            'expense_type' => 'Bahan Bakar & Tol',
-            'amount' => 350000,
-            'is_company_paid' => false,
-        ]);
-        $reimbPending->recalculateTotals();
-
-        $reimbApproved = Reimbursement::create([
-            'employee_id' => $this->staff->id,
-            'sppd_id' => $sppd->id,
-            'title' => 'Reimbursement Parkir & Konsumsi',
-            'status' => 'approved',
-        ]);
-        Expense::create([
-            'reimbursement_id' => $reimbApproved->id,
-            'expense_type' => 'Parkir & Retribusi',
-            'amount' => 150000,
-            'is_company_paid' => false,
-        ]);
-        $reimbApproved->recalculateTotals();
+        $recap->recalculateTotals();
+        $recap->ensureApprovalRequestExists($this->staff);
 
         // Verifikasi Overview Widget
         Livewire::test(ExecutiveOverviewWidget::class)
             ->assertSuccessful()
             ->assertSee('Rp 2.200.000') // Biaya SPPD
-            ->assertSee('Rp 150.000'); // Klaim Reimbursement Approved
+            ->assertSee('Rp 1.732.500'); // Grand Total Rekap (1.650.000 + 5% manfee 82.500)
 
         // Verifikasi Pending Approvals Table Widget
         Livewire::test(ExecutivePendingApprovalsWidget::class)
             ->assertSuccessful()
             ->assertDontSee('Nilai Biaya / Klaim')
             ->assertSee('Memo Proyek Cilegon')
-            ->assertSee('Reimbursement Bensin Tol')
+            ->assertSee('Rekap Tiket Cilegon')
             ->assertSee('Rian Traveler');
 
         // Verifikasi Recent Trips Table Widget
@@ -286,5 +288,88 @@ class ExecutiveDashboardTest extends TestCase
             ->assertSee('001/SPPD/MESI/11/2026')
             ->assertSee('Cilegon')
             ->assertSee('Rp 2.200.000');
+    }
+
+    public function test_division_head_can_render_executive_dashboard_and_widgets(): void
+    {
+        $divUser = User::factory()->create(['name' => 'Herry Division Head']);
+        $divUser->assignRole('Division Head');
+        Employee::create([
+            'organization_id' => $this->org->id,
+            'department_id' => $this->dept->id,
+            'position_id' => $this->managerPos->id,
+            'user_id' => $divUser->id,
+            'name' => 'Herry Division Head',
+            'identity_number' => 'DIV-999',
+        ]);
+
+        $this->actingAs($divUser);
+
+        Livewire::test(Dashboard::class)
+            ->assertSuccessful();
+
+        Livewire::test(DashboardWelcomeBannerWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Herry Division Head')
+            ->assertSee('Persetujuan Rekap Tiket')
+            ->assertSee('Persetujuan Rekap Dinas');
+
+        Livewire::test(ExecutiveOverviewWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Antrian Persetujuan')
+            ->assertSee('Rekap Tiket & Akomodasi')
+            ->assertSee('Rekap Perjalanan Dinas');
+
+        Livewire::test(ExecutiveCostSummaryWidget::class)->assertSuccessful();
+        Livewire::test(ExecutivePipelineChartWidget::class)->assertSuccessful();
+        Livewire::test(ExecutivePendingApprovalsWidget::class)->assertSuccessful();
+        Livewire::test(ExecutiveRecentTripsWidget::class)->assertSuccessful();
+    }
+
+    public function test_superadmin_has_exclusive_full_access_and_complete_dashboard(): void
+    {
+        $superUser = User::factory()->create(['name' => 'Superuser Motiva']);
+        $superUser->assignRole('Superadmin');
+
+        $this->actingAs($superUser);
+
+        $this->assertTrue(\App\Filament\Admin\Resources\MemoResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdCostResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdRateStandardResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\TransportAccommodationRecapResource::shouldRegisterNavigation());
+        $this->assertTrue(\App\Filament\Admin\Resources\OfficialTravelRecapResource::shouldRegisterNavigation());
+        $this->assertTrue(\App\Filament\Admin\Resources\MemoApprovalResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdApprovalResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdCostApprovalResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\TransportAccommodationApprovalResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\OfficialTravelApprovalResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Clusters\DataPegawai::canAccess());
+        $this->assertTrue(\App\Filament\Admin\Clusters\HakAkses::canAccess());
+        $this->assertTrue(\App\Filament\Admin\Pages\SppdSettingsPage::canAccess());
+        $this->assertTrue(\App\Filament\Admin\Pages\ReimbursementSettingsPage::canAccess());
+        $this->assertTrue(\App\Filament\Admin\Pages\SignatureSettingsPage::canAccess());
+
+        Livewire::test(Dashboard::class)->assertSuccessful();
+
+        Livewire::test(DashboardWelcomeBannerWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Buat Memo Dinas')
+            ->assertSee('Hitung Biaya SPPD')
+            ->assertSee('Rekap Tiket & Akomodasi')
+            ->assertSee('Rekap Perjalanan Dinas')
+            ->assertSee('Persetujuan Memo')
+            ->assertSee('Persetujuan SPPD')
+            ->assertSee('Persetujuan Biaya SPPD')
+            ->assertSee('Persetujuan Rekap Tiket')
+            ->assertSee('Persetujuan Rekap Dinas')
+            ->assertSee('Pengaturan SPPD')
+            ->assertSee('Pengaturan Fee Rekap');
+
+        Livewire::test(ExecutiveOverviewWidget::class)->assertSuccessful();
+        Livewire::test(ExecutiveCostSummaryWidget::class)->assertSuccessful();
+        Livewire::test(ExecutivePipelineChartWidget::class)->assertSuccessful();
+        Livewire::test(ExecutivePendingApprovalsWidget::class)->assertSuccessful();
+        Livewire::test(ExecutiveRecentTripsWidget::class)->assertSuccessful();
     }
 }

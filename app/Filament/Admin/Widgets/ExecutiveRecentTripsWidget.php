@@ -22,14 +22,14 @@ class ExecutiveRecentTripsWidget extends BaseWidget
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         if (! $user) return false;
-        return $user->hasAnyRole(['Manager', 'Supervisor', 'Superadmin', 'Admin', 'HR']);
+        return $user->hasAnyRole(['Division Head', 'Manager', 'Supervisor', 'Superadmin', 'Admin', 'HR']);
     }
 
     public function table(Table $table): Table
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
-        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR']);
+        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']);
 
         $query = Sppd::query()
             ->with(['employee.position', 'employee.department', 'businessTrip', 'cost'])

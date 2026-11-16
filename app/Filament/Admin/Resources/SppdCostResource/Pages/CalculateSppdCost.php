@@ -137,11 +137,18 @@ class CalculateSppdCost extends Page implements HasForms
             $formData
         );
         $cost->recalculateTotals();
+        if ($cost->status !== 'approved') {
+            $cost->status = 'pending';
+        }
         $cost->save();
 
+        if ($cost->status === 'pending') {
+            $cost->ensureApprovalRequestExists(auth()->user()?->employee);
+        }
+
         Notification::make()
-            ->title('Perhitungan Biaya SPPD Berhasil Disimpan')
-            ->body('Total biaya disetujui sebesar Rp ' . number_format($cost->total_cost, 0, ',', '.'))
+            ->title('Perhitungan Biaya SPPD Disimpan & Diajukan ke Manajer')
+            ->body('Total biaya sebesar Rp ' . number_format($cost->total_cost, 0, ',', '.') . ' telah diajukan untuk persetujuan Manajer.')
             ->success()
             ->send();
 

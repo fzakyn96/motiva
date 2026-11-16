@@ -35,11 +35,15 @@ class SppdCostPrintController extends Controller
         $signerPosition = $signer?->position?->name ?? 'Manajer';
 
         $sigService = app(\App\Services\Signature\SignatureService::class);
+        $hasCostSignature = \App\Models\DocumentSignature::where('document_type', SppdCost::class)
+            ->where('document_id', $cost->id)
+            ->where('role_type', 'manager')
+            ->exists();
         $signerSignatureRender = $sigService->resolveRenderData(
-            $sppd,
+            $hasCostSignature ? $cost : $sppd,
             $signer,
             'manager',
-            $sppd?->status === 'approved'
+            $cost->status === 'approved'
         );
         $employeeSignatureRender = $sigService->resolveRenderData(
             $sppd,

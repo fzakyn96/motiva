@@ -33,7 +33,7 @@ class TransportAccommodationApprovalResource extends Resource
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
 
-        return (bool) $user?->hasAnyRole(['Superadmin', 'Admin', 'Manager', 'Division Head', 'HR']);
+        return (bool) $user?->hasAnyRole(['Superadmin', 'Admin', 'Manager', 'Division Head']);
     }
 
     public static function canCreate(): bool

@@ -241,4 +241,195 @@ class DomainSppdCostTest extends TestCase
             ->assertSuccessful()
             ->assertSeeHtml('Daftar Perhitungan Biaya SPPD');
     }
+
+    public function test_sppd_cost_requires_manager_approval_and_syncs_to_monthly_official_travel_recap(): void
+    {
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        $org = Organization::create(['name' => 'PT Motiva', 'code' => 'MTV']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Jakarta', 'code' => 'JKT']);
+        $mgrPos = Position::create(['name' => 'Manager', 'code' => 'MGR', 'level' => 1]);
+        $stfPos = Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $dummyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+        $mgrUser = User::factory()->create([
+            'name' => 'M Nuramzan Iftari',
+            'signature_type' => 'draw',
+            'signature_data' => $dummyPng,
+        ]);
+        $mgrUser->assignRole('Manager');
+        $mgrEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+            'user_id' => $mgrUser->id,
+            'name' => 'M Nuramzan Iftari',
+            'identity_number' => 'MGR-COST-1',
+        ]);
+
+        $hrUser = User::factory()->create(['name' => 'HR Cost']);
+        $hrUser->assignRole('HR');
+        Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $stfPos->id,
+            'user_id' => $hrUser->id,
+            'manager_id' => $mgrEmp->id,
+            'name' => 'HR Cost',
+            'identity_number' => 'HR-COST-1',
+        ]);
+
+        $staff1 = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $stfPos->id,
+            'manager_id' => $mgrEmp->id,
+            'name' => 'Pegawai Satu',
+            'identity_number' => 'STF-COST-1',
+        ]);
+        $staff2 = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $stfPos->id,
+            'manager_id' => $mgrEmp->id,
+            'name' => 'Pegawai Dua',
+            'identity_number' => 'STF-COST-2',
+        ]);
+
+        $trip = BusinessTrip::create([
+            'activity_name' => 'Audit November',
+            'destination' => 'Bandung',
+            'start_date' => '2026-11-10',
+            'end_date' => '2026-11-12',
+        ]);
+
+        $sppd1 = Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $staff1->id,
+            'sppd_number' => '001/SPPD/JKT/11/2026',
+            'status' => 'approved',
+            'origin_location' => 'Jakarta',
+            'destination_location' => 'Bandung',
+            'departure_date' => '2026-11-10',
+            'return_date' => '2026-11-12',
+            'total_days' => 3,
+        ]);
+        $sppd2 = Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $staff2->id,
+            'sppd_number' => '002/SPPD/JKT/11/2026',
+            'status' => 'approved',
+            'origin_location' => 'Jakarta',
+            'destination_location' => 'Bandung',
+            'departure_date' => '2026-11-10',
+            'return_date' => '2026-11-12',
+            'total_days' => 3,
+        ]);
+
+        $this->actingAs($hrUser);
+        \Illuminate\Support\Facades\Storage::fake('public');
+
+        // 1. HR calculates & saves SPPD 1 & SPPD 2 costs -> automatically submitted as pending
+        Livewire::test(CalculateSppdCost::class, ['record' => $sppd1->id])
+            ->fillForm([
+                'meal_qty' => 3,
+                'meal_rate' => 150000,
+                'general_evidence' => [\Illuminate\Http\UploadedFile::fake()->create('bukti1.pdf', 50, 'application/pdf')],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Livewire::test(CalculateSppdCost::class, ['record' => $sppd2->id])
+            ->fillForm([
+                'meal_qty' => 3,
+                'meal_rate' => 100000,
+                'general_evidence' => [\Illuminate\Http\UploadedFile::fake()->create('bukti2.pdf', 50, 'application/pdf')],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $cost1 = $sppd1->cost()->firstOrFail();
+        $cost2 = $sppd2->cost()->firstOrFail();
+        $this->assertSame('pending', $cost1->status);
+        $this->assertSame('pending', $cost2->status);
+
+        $req1 = \App\Models\ApprovalRequest::where('document_type', SppdCost::class)->where('document_id', $cost1->id)->firstOrFail();
+        $req2 = \App\Models\ApprovalRequest::where('document_type', SppdCost::class)->where('document_id', $cost2->id)->firstOrFail();
+
+        // Unapproved SPPD costs should NOT be synced yet
+        $this->assertNull(\App\Models\OfficialTravelRecap::syncForMonth(11, 2026, $hrUser->id));
+
+        // 2. Manager approves SPPD 1 & SPPD 2 costs (bulk approve) via Persetujuan Biaya SPPD
+        $this->actingAs($mgrUser);
+        $this->assertSame('Persetujuan', \App\Filament\Admin\Resources\SppdCostApprovalResource::getNavigationGroup());
+
+        Livewire::test(\App\Filament\Admin\Resources\SppdCostApprovalResource\Pages\ListSppdCostApprovals::class)
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords([$req1, $req2])
+            ->callTableBulkAction('bulk_approve', [$req1, $req2], data: ['notes' => 'Disetujui Manajer'])
+            ->assertHasNoTableBulkActionErrors();
+
+        $this->assertSame('approved', $cost1->fresh()->status);
+        $this->assertSame('approved', $cost2->fresh()->status);
+        $this->assertDatabaseHas('document_signatures', [
+            'document_type' => SppdCost::class,
+            'document_id' => $cost1->id,
+            'user_id' => $mgrUser->id,
+            'role_type' => 'manager',
+        ]);
+
+        // 3. HR clicks "Buat / Sinkronkan Rekap Bulan Ini" -> gathers both Manager-approved SPPD costs
+        $this->actingAs($hrUser);
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ListOfficialTravelRecaps::class)
+            ->callAction('sync_monthly_recap', data: ['month' => 11, 'year' => 2026])
+            ->assertHasNoActionErrors();
+
+        $recap = \App\Models\OfficialTravelRecap::where('period_month', '2026-11')->firstOrFail();
+        $this->assertCount(2, $recap->items);
+        $this->assertEquals((float) $cost1->total_cost + (float) $cost2->total_cost, (float) $recap->total_work_cost);
+
+        // Calling sync multiple times (even if legacy period_month was month name) must NOT duplicate recaps
+        $recap->update(['period_month' => 'November']);
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ListOfficialTravelRecaps::class)
+            ->callAction('sync_monthly_recap', data: ['month' => 11, 'year' => 2026])
+            ->assertHasNoActionErrors();
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ListOfficialTravelRecaps::class)
+            ->callAction('sync_monthly_recap', data: ['month' => 11, 'year' => 2026])
+            ->assertHasNoActionErrors();
+
+        $this->assertSame(1, \App\Models\OfficialTravelRecap::where('period_label', 'November 2026')->count());
+
+        // 4. Multi-month catch-up: approved SPPD cost from 2 months ago (September 2026) is synced via sync_all_months
+        $oldSppd = Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $staff1->id,
+            'sppd_number' => '090/SPPD/JKT/09/2026',
+            'status' => 'approved',
+            'origin_location' => 'Jakarta',
+            'destination_location' => 'Surabaya',
+            'departure_date' => '2026-09-10',
+            'return_date' => '2026-09-12',
+            'total_days' => 3,
+        ]);
+        $oldCost = SppdCost::create([
+            'sppd_id' => $oldSppd->id,
+            'creator_id' => $hrUser->id,
+            'official_days' => 3,
+            'meal_qty' => 3,
+            'meal_rate' => 120000,
+            'meal_total' => 360000,
+            'subtotal_per_diem' => 360000,
+            'total_cost' => 360000,
+            'status' => 'approved',
+        ]);
+
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ListOfficialTravelRecaps::class)
+            ->callAction('sync_monthly_recap', data: ['sync_all_months' => true])
+            ->assertHasNoActionErrors();
+
+        $oldRecap = \App\Models\OfficialTravelRecap::where('period_month', '2026-09')->firstOrFail();
+        $this->assertCount(1, $oldRecap->items);
+        $this->assertEquals(360000, (float) $oldRecap->total_work_cost);
+    }
 }

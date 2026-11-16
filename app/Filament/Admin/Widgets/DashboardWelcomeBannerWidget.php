@@ -4,8 +4,10 @@ namespace App\Filament\Admin\Widgets;
 
 use App\Models\ApprovalRequest;
 use App\Models\Memo;
-use App\Models\Reimbursement;
+use App\Models\OfficialTravelRecap;
 use App\Models\Sppd;
+use App\Models\SppdCost;
+use App\Models\TransportAccommodationRecap;
 use Filament\Widgets\Widget;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -22,19 +24,27 @@ class DashboardWelcomeBannerWidget extends Widget
         /** @var \App\Models\User|null $user */
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
-        $isExecutive = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Manager', 'Supervisor']);
-        $isAllAccess = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+        $isExecutive = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Division Head', 'Manager', 'Supervisor']);
+        $isAllAccess = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Division Head']);
+        $isHrOrAdmin = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
 
         $pendingMemo = 0;
         $pendingSppd = 0;
-        $pendingReimb = 0;
+        $pendingSppdCost = 0;
+        $pendingTransportRecap = 0;
+        $pendingTravelRecap = 0;
         $uncalculatedSppdCost = 0;
         $draftSppdForStaff = 0;
 
         if ($isExecutive) {
             $qMemo = ApprovalRequest::where('document_type', Memo::class)->where('status', 'pending');
-            $qSppd = ApprovalRequest::where('document_type', Sppd::class)->where('status', 'pending');
-            $qReimb = ApprovalRequest::where('document_type', Reimbursement::class)->where('status', 'pending');
+            $qSppd = \App\Filament\Admin\Resources\SppdApprovalResource::applyActionablePendingScope(
+                ApprovalRequest::where('document_type', Sppd::class),
+                $user
+            );
+            $qSppdCost = ApprovalRequest::where('document_type', SppdCost::class)->where('status', 'pending');
+            $qTransport = ApprovalRequest::where('document_type', TransportAccommodationRecap::class)->where('status', 'pending');
+            $qTravel = ApprovalRequest::where('document_type', OfficialTravelRecap::class)->where('status', 'pending');
 
             if (! $isAllAccess && $employee) {
                 $qMemo->whereHasMorph('document', [Memo::class], function (Builder $q) use ($employee) {
@@ -43,25 +53,35 @@ class DashboardWelcomeBannerWidget extends Widget
                         ->orWhereHas('creator', fn (Builder $cq) => $cq->where('manager_id', $employee->id));
                 });
 
-                $filterEmp = function (Builder $query, string $docClass) use ($employee) {
-                    $query->whereHasMorph('document', [$docClass], function (Builder $q) use ($employee) {
-                        $q->whereHas('employee', function (Builder $eq) use ($employee) {
-                            $eq->where('department_id', $employee->department_id)
-                                ->orWhere('manager_id', $employee->id)
-                                ->orWhere('id', $employee->id);
-                        });
+                $qSppd->whereHasMorph('document', [Sppd::class], function (Builder $q) use ($employee) {
+                    $q->whereHas('employee', function (Builder $eq) use ($employee) {
+                        $eq->where('department_id', $employee->department_id)
+                            ->orWhere('manager_id', $employee->id)
+                            ->orWhere('id', $employee->id);
                     });
-                };
+                });
 
-                $filterEmp($qSppd, Sppd::class);
-                $filterEmp($qReimb, Reimbursement::class);
+                $qSppdCost->whereHasMorph('document', [SppdCost::class], function (Builder $q) use ($employee) {
+                    $q->whereHas('sppd.employee', function (Builder $eq) use ($employee) {
+                        $eq->where('department_id', $employee->department_id)
+                            ->orWhere('manager_id', $employee->id)
+                            ->orWhere('id', $employee->id);
+                    });
+                });
+
+                if ($employee->department_id) {
+                    $qTransport->whereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $q) => $q->where('department_id', $employee->department_id));
+                    $qTravel->whereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $q) => $q->where('department_id', $employee->department_id));
+                }
             }
 
             $pendingMemo = $qMemo->count();
             $pendingSppd = $qSppd->count();
-            $pendingReimb = $qReimb->count();
+            $pendingSppdCost = $qSppdCost->count();
+            $pendingTransportRecap = $qTransport->count();
+            $pendingTravelRecap = $qTravel->count();
 
-            if ($isAllAccess) {
+            if ($isHrOrAdmin) {
                 $uncalculatedSppdCost = Sppd::where('status', 'approved')->whereDoesntHave('cost')->count();
             }
         } elseif ($employee) {
@@ -73,14 +93,18 @@ class DashboardWelcomeBannerWidget extends Widget
             'employee' => $employee,
             'isExecutive' => $isExecutive,
             'isAllAccess' => $isAllAccess,
+            'isDivisionHead' => ($user?->hasRole('Division Head') ?? false) && ! $isHrOrAdmin,
             'isManager' => $user?->hasRole('Manager') ?? false,
             'isSupervisor' => $user?->hasRole('Supervisor') ?? false,
-            'isHrOrAdmin' => $isAllAccess,
+            'isHrOrAdmin' => $isHrOrAdmin,
             'isStaff' => $user && $user->hasRole('Staff') && ! $isExecutive,
             'hasSignature' => $user?->hasConfiguredSignature() ?? false,
             'pendingMemo' => $pendingMemo,
             'pendingSppd' => $pendingSppd,
-            'pendingReimb' => $pendingReimb,
+            'pendingSppdCost' => $pendingSppdCost,
+            'pendingTransportRecap' => $pendingTransportRecap,
+            'pendingTravelRecap' => $pendingTravelRecap,
+            'pendingRecap' => $pendingTransportRecap + $pendingTravelRecap,
             'uncalculatedSppdCost' => $uncalculatedSppdCost,
             'draftSppdForStaff' => $draftSppdForStaff,
         ];

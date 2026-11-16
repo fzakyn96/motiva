@@ -509,6 +509,51 @@ class SppdResource extends Resource
                             ])
                             ->columns(['default' => 1, 'md' => 2]),
                     ]),
+
+                Forms\Components\Section::make('Terapkan ke Pegawai Lain pada Memo yang Sama (Opsional)')
+                    ->icon('heroicon-o-users')
+                    ->iconColor('info')
+                    ->description('Jika dalam 1 Memo terdapat beberapa pegawai dengan isian SPPD yang sama, centang pegawai lain untuk langsung mengisi & mengajukan sekaligus. Biarkan kosong bagi pegawai yang isiannya berbeda.')
+                    ->visible(function (?Sppd $record): bool {
+                        if (! $record || ! $record->business_trip_id) {
+                            return false;
+                        }
+                        if (! \App\Models\SppdSetting::current()->isHrFiller()) {
+                            return false;
+                        }
+                        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                        if (! $user || ! $user->hasAnyRole(['HR', 'Admin', 'Superadmin'])) {
+                            return false;
+                        }
+
+                        return Sppd::where('business_trip_id', $record->business_trip_id)
+                            ->where('id', '!=', $record->id)
+                            ->where('status', 'draft')
+                            ->exists();
+                    })
+                    ->schema([
+                        Forms\Components\CheckboxList::make('apply_to_sibling_sppd_ids')
+                            ->label('Pegawai Lain pada Memo yang Sama (Status Draf)')
+                            ->options(function (?Sppd $record): array {
+                                if (! $record || ! $record->business_trip_id) {
+                                    return [];
+                                }
+
+                                return Sppd::with('employee')
+                                    ->where('business_trip_id', $record->business_trip_id)
+                                    ->where('id', '!=', $record->id)
+                                    ->where('status', 'draft')
+                                    ->get()
+                                    ->mapWithKeys(fn (Sppd $s) => [
+                                        $s->id => ($s->employee?->name ?? 'Pegawai #' . $s->employee_id)
+                                            . ($s->employee?->identity_number ? ' (' . $s->employee->identity_number . ')' : ''),
+                                    ])
+                                    ->toArray();
+                            })
+                            ->bulkToggleable()
+                            ->columns(['default' => 1, 'sm' => 2])
+                            ->dehydrated(false),
+                    ]),
             ]);
     }
 
@@ -716,6 +761,27 @@ class SppdResource extends Resource
                     ->size('sm')
                     ->color('warning')
                     ->visible(fn (Sppd $record) => static::canEdit($record)),
+                Tables\Actions\Action::make('employee_approve')
+                    ->label('Setujui & Tandatangani')
+                    ->icon('heroicon-o-check-badge')
+                    ->button()
+                    ->size('sm')
+                    ->color('success')
+                    ->visible(fn (Sppd $record): bool => static::canEmployeeSign($record))
+                    ->requiresConfirmation()
+                    ->modalIcon('heroicon-o-clipboard-document-check')
+                    ->modalHeading('Konfirmasi Persetujuan & Tanda Tangan SPPD')
+                    ->modalDescription(function (): string {
+                        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                        if (! $user?->hasConfiguredSignature()) {
+                            return 'PERHATIAN: Anda belum mengatur tanda tangan digital. Silakan atur tanda tangan terlebih dahulu di menu Pengaturan Tanda Tangan sebelum menyetujui SPPD ini.';
+                        }
+
+                        return 'Dengan menekan tombol "Ya, Setujui & Tandatangani", Anda menyetujui penugasan dan perhitungan biaya perjalanan dinas sesuai ketentuan perusahaan. Tanda tangan digital Anda akan otomatis dibubuhkan pada cetakan SPPD.';
+                    })
+                    ->modalSubmitActionLabel('Ya, Setujui & Tandatangani')
+                    ->modalCancelActionLabel('Batal')
+                    ->action(fn (Sppd $record) => static::performEmployeeSignature($record)),
                 Tables\Actions\Action::make('print')
                     ->label('Cetak')
                     ->icon('heroicon-o-printer')
@@ -728,12 +794,255 @@ class SppdResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('bulk_fill_sppd')
+                        ->label('Isi & Ajukan Form SPPD Massal')
+                        ->icon('heroicon-o-clipboard-document-check')
+                        ->color('primary')
+                        ->deselectRecordsAfterCompletion()
+                        ->visible(function (): bool {
+                            $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+
+                            return \App\Models\SppdSetting::current()->isHrFiller()
+                                && $user?->hasAnyRole(['HR', 'Admin', 'Superadmin']);
+                        })
+                        ->modalHeading('Isi & Ajukan Form SPPD Massal')
+                        ->modalDescription('Isian di bawah akan diterapkan ke seluruh SPPD berstatus Draf yang Anda pilih. Jika ada pegawai dengan jadwal atau ketentuan berbeda, jangan centang pegawai tersebut agar dapat diisi terpisah.')
+                        ->modalWidth('4xl')
+                        ->fillForm(function (\Illuminate\Support\Collection $records): array {
+                            /** @var Sppd|null $first */
+                            $first = $records->firstWhere('status', 'draft') ?? $records->first();
+                            if (! $first) {
+                                return [];
+                            }
+                            $first->loadMissing(['businessTrip.memo', 'employee']);
+                            $memo = $first->businessTrip?->memo;
+                            $trip = $first->businessTrip;
+                            $start = $first->departure_date ?? $memo?->assignment_start_date ?? $trip?->start_date;
+                            $end = $first->return_date ?? $memo?->assignment_end_date ?? $trip?->end_date ?? $start;
+                            $startStr = $start ? \Carbon\Carbon::parse($start)->format('Y-m-d') : null;
+                            $endStr = $end ? \Carbon\Carbon::parse($end)->format('Y-m-d') : $startStr;
+                            $days = ($startStr && $endStr && \Carbon\Carbon::parse($endStr)->greaterThanOrEqualTo(\Carbon\Carbon::parse($startStr)))
+                                ? \Carbon\Carbon::parse($startStr)->diffInDays(\Carbon\Carbon::parse($endStr)) + 1
+                                : ($first->total_days ?: 1);
+
+                            return [
+                                'origin_location' => $first->origin_location ?: ($first->employee?->area ?? 'Jakarta'),
+                                'destination_location' => $first->destination_location ?: ($memo?->location ?? ($trip?->destination ?? '')),
+                                'assignment_purpose' => $first->assignment_purpose ?: ($memo?->agenda ?? ($memo?->title ?? ($trip?->activity_name ?? ''))),
+                                'departure_date' => $startStr,
+                                'departure_time' => $first->departure_time ?: '08:00',
+                                'return_date' => $endStr,
+                                'return_time' => $first->return_time ?: '17:00',
+                                'total_days' => $days,
+                                'travel_category' => $first->travel_category ?: 'Dalam Negeri',
+                                'general_travel_type' => $first->general_travel_type,
+                                'special_travel_type' => $first->special_travel_type,
+                                'transport_departure' => $first->transport_departure,
+                                'transport_arrival' => $first->transport_arrival,
+                                'transportation_mode' => $first->transportation_mode,
+                                'destination_transportation' => $first->destination_transportation ?: [],
+                            ];
+                        })
+                        ->form([
+                            Forms\Components\Grid::make(['default' => 1, 'md' => 2])
+                                ->schema([
+                                    Forms\Components\TextInput::make('origin_location')->label('6. Tempat Berangkat')->required(),
+                                    Forms\Components\TextInput::make('destination_location')->label('7. Tempat Tujuan')->required(),
+                                    Forms\Components\Textarea::make('assignment_purpose')->label('8. Maksud Perjalanan Dinas')->rows(2)->required()->columnSpanFull(),
+                                    Forms\Components\DatePicker::make('departure_date')->label('9a. Tanggal Berangkat')->required(),
+                                    Forms\Components\TextInput::make('departure_time')->label('9b. Waktu Berangkat')->default('08:00')->required(),
+                                    Forms\Components\DatePicker::make('return_date')->label('10a. Tanggal Kembali')->required(),
+                                    Forms\Components\TextInput::make('return_time')->label('10b. Waktu Kembali')->default('17:00')->required(),
+                                    Forms\Components\TextInput::make('total_days')->label('11. Lama Hari')->numeric()->required(),
+                                    Forms\Components\Select::make('travel_category')
+                                        ->label('12. Kategori Perjalanan')
+                                        ->options(['Dalam Negeri' => 'Dalam Negeri', 'Luar Negeri' => 'Luar Negeri'])
+                                        ->default('Dalam Negeri')
+                                        ->required(),
+                                    Forms\Components\Select::make('general_travel_type')
+                                        ->label('13a. Jenis Perjalanan Dinas Umum')
+                                        ->options(['Sementara' => 'Sementara', 'Tetap / Pindah' => 'Tetap / Pindah']),
+                                    Forms\Components\Select::make('special_travel_type')
+                                        ->label('13b. Jenis Perjalanan Dinas Khusus')
+                                        ->options(['Tugas Belajar' => 'Tugas Belajar', 'Detasering' => 'Detasering', 'Lainnya' => 'Lainnya']),
+                                    Forms\Components\Select::make('transport_departure')
+                                        ->label('14a. Biaya Transport Berangkat')
+                                        ->options(['Ditanggung Perusahaan' => 'Ditanggung Perusahaan', 'Reimburse' => 'Reimburse'])
+                                        ->required(),
+                                    Forms\Components\Select::make('transport_arrival')
+                                        ->label('14b. Biaya Transport Kembali')
+                                        ->options(['Ditanggung Perusahaan' => 'Ditanggung Perusahaan', 'Reimburse' => 'Reimburse'])
+                                        ->required(),
+                                    Forms\Components\Select::make('transportation_mode')
+                                        ->label('14c. Moda Transportasi')
+                                        ->options([
+                                            'Pesawat Udara' => 'Pesawat Udara',
+                                            'Kereta Api' => 'Kereta Api',
+                                            'Kendaraan Dinas' => 'Kendaraan Dinas / Operasional',
+                                            'Kendaraan Pribadi' => 'Kendaraan Pribadi',
+                                            'Travel / Bus / Umum' => 'Travel / Bus / Angkutan Umum',
+                                            'Kapal Laut' => 'Kapal Laut',
+                                        ])
+                                        ->required(),
+                                    Forms\Components\CheckboxList::make('destination_transportation')
+                                        ->label('15. Sarana Transportasi di Tempat Tujuan')
+                                        ->options([
+                                            'Penugasan = Penginapan' => 'Penugasan = Penginapan',
+                                            'Kendaraan Dinas/Operasional' => 'Kendaraan Dinas / Operasional',
+                                            'Mengatur Sendiri' => 'Mengatur Sendiri',
+                                            'Sewa Kendaraan' => 'Sewa Kendaraan',
+                                        ])
+                                        ->columns(2)
+                                        ->required()
+                                        ->minItems(1)
+                                        ->columnSpanFull(),
+                                ]),
+                        ])
+                        ->action(function (\Illuminate\Support\Collection $records, array $data): void {
+                            $submitted = 0;
+                            foreach ($records as $sppd) {
+                                if (! $sppd instanceof Sppd || $sppd->status !== 'draft') {
+                                    continue;
+                                }
+                                static::submitFilledSppd($sppd, $data);
+                                $submitted++;
+                            }
+
+                            \Filament\Notifications\Notification::make()
+                                ->title('Pengisian Massal SPPD Selesai')
+                                ->body("{$submitted} dokumen SPPD berhasil diisi dan diajukan untuk persetujuan.")
+                                ->success()
+                                ->send();
+                        }),
                     Tables\Actions\DeleteBulkAction::make()
                         ->label('Hapus Terpilih')
                         ->icon('heroicon-o-trash')
                         ->visible(fn () => static::canDeleteAny()),
                 ]),
             ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function copyableFormFields(): array
+    {
+        return [
+            'departure_date',
+            'departure_time',
+            'return_date',
+            'return_time',
+            'total_days',
+            'origin_location',
+            'destination_location',
+            'assignment_purpose',
+            'travel_category',
+            'general_travel_type',
+            'special_travel_type',
+            'transport_departure',
+            'transport_arrival',
+            'transportation_mode',
+            'destination_transportation',
+        ];
+    }
+
+    public static function submitFilledSppd(Sppd $sppd, array $data): void
+    {
+        $payload = array_intersect_key($data, array_flip(static::copyableFormFields()));
+        $payload['status'] = 'pending';
+        $sppd->update($payload);
+
+        (new \App\Observers\SppdObserver())->ensureApprovalRequestExists($sppd);
+
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if ($user && (int) $sppd->employee?->user_id === (int) $user->id && $user->hasConfiguredSignature()) {
+            app(\App\Services\Signature\SignatureService::class)->signDocument(
+                $sppd,
+                $sppd->employee,
+                'requester',
+                'Menyetujui perhitungan biaya perjalanan dinas sesuai keputusan perusahaan',
+                $user
+            );
+        }
+    }
+
+    public static function hasEmployeeSigned(Sppd $sppd): bool
+    {
+        return \App\Models\DocumentSignature::where('document_type', Sppd::class)
+            ->where('document_id', $sppd->id)
+            ->where('role_type', 'requester')
+            ->exists();
+    }
+
+    public static function canEmployeeSign(Sppd $sppd): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user || $sppd->status !== 'approved') {
+            return false;
+        }
+
+        if ((int) $sppd->employee?->user_id !== (int) $user->id) {
+            return false;
+        }
+
+        return ! static::hasEmployeeSigned($sppd);
+    }
+
+    public static function performEmployeeSignature(Sppd $sppd): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user || ! static::canEmployeeSign($sppd)) {
+            return false;
+        }
+
+        $sigService = app(\App\Services\Signature\SignatureService::class);
+        if (! $sigService->ensureUserCanSign($user)) {
+            return false;
+        }
+
+        $sigService->signDocument(
+            $sppd,
+            $sppd->employee,
+            'requester',
+            'Menyetujui perhitungan biaya perjalanan dinas sesuai keputusan perusahaan',
+            $user
+        );
+
+        \Filament\Notifications\Notification::make()
+            ->title('SPPD Disetujui & Ditandatangani')
+            ->body('Persetujuan dan tanda tangan digital Anda telah dibubuhkan ke dokumen SPPD.')
+            ->success()
+            ->send();
+
+        return true;
+    }
+
+    public static function applyFormToSiblings(Sppd $source, array $siblingIds): int
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $siblingIds))));
+        if (empty($ids) || ! $source->business_trip_id) {
+            return 0;
+        }
+
+        $siblings = Sppd::with('employee.user')
+            ->where('business_trip_id', $source->business_trip_id)
+            ->where('id', '!=', $source->id)
+            ->where('status', 'draft')
+            ->whereIn('id', $ids)
+            ->get();
+
+        $payload = [];
+        foreach (static::copyableFormFields() as $field) {
+            $payload[$field] = $source->{$field};
+        }
+
+        $count = 0;
+        foreach ($siblings as $sibling) {
+            static::submitFilledSppd($sibling, $payload);
+            $count++;
+        }
+
+        return $count;
     }
 
     public static function getRelations(): array

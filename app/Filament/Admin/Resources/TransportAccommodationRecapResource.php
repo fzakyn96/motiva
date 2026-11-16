@@ -37,6 +37,13 @@ class TransportAccommodationRecapResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+
+        return (bool) $user?->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+    }
+
     public static function canViewAny(): bool
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
@@ -168,7 +175,7 @@ class TransportAccommodationRecapResource extends Resource
                                     ->required()
                                     ->columnSpanFull(),
                                 Forms\Components\TextInput::make('amount')
-                                    ->label('Jumlah (IDR)')
+                                    ->label('Jumlah')
                                     ->numeric()
                                     ->prefix('Rp')
                                     ->placeholder('Masukkan nominal sesuai invoice')
@@ -187,7 +194,7 @@ class TransportAccommodationRecapResource extends Resource
                                         $set('total_amount', $amount + $serviceFee);
                                     }),
                                 Forms\Components\TextInput::make('service_fee')
-                                    ->label('Service Fee (IDR)')
+                                    ->label('Service Fee')
                                     ->numeric()
                                     ->prefix('Rp')
                                     ->default(0)
@@ -199,7 +206,7 @@ class TransportAccommodationRecapResource extends Resource
                                         $set('total_amount', $amount + $serviceFee);
                                     }),
                                 Forms\Components\TextInput::make('total_amount')
-                                    ->label('Total Biaya (IDR)')
+                                    ->label('Total Biaya')
                                     ->numeric()
                                     ->prefix('Rp')
                                     ->disabled()
@@ -412,7 +419,7 @@ class TransportAccommodationRecapResource extends Resource
                         ->limit(55),
                     Tables\Columns\TextColumn::make('grand_total')
                         ->label('Total Biaya + Manfee')
-                        ->money('IDR', locale: 'id')
+                        ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                         ->badge()
                         ->color('success')
                         ->grow(false),
@@ -429,10 +436,10 @@ class TransportAccommodationRecapResource extends Resource
                                 ->color('info'),
                             Tables\Columns\TextColumn::make('total_cost')
                                 ->description('Total Biaya', position: 'above')
-                                ->money('IDR', locale: 'id'),
+                                ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
                             Tables\Columns\TextColumn::make('manfee_amount')
                                 ->description('Manfee', position: 'above')
-                                ->money('IDR', locale: 'id'),
+                                ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
                             Tables\Columns\TextColumn::make('created_at')
                                 ->description('Dibuat Pada', position: 'above')
                                 ->dateTime('d/m/Y H:i'),
@@ -481,13 +488,13 @@ class TransportAccommodationRecapResource extends Resource
                                 'Menunggu Pemeriksaan Manajer', 'Menunggu Division Head' => 'warning',
                                 default => 'gray',
                             }),
-                        Infolists\Components\TextEntry::make('total_cost')->label('Total Biaya')->money('IDR', locale: 'id'),
+                        Infolists\Components\TextEntry::make('total_cost')->label('Total Biaya')->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
                         Infolists\Components\TextEntry::make('manfee_amount')
                             ->label('Manfee (' . rtrim(rtrim(number_format((float) ($infolist->getRecord()?->manfee_percent ?? 5), 2, '.', ''), '0'), '.') . '%)')
-                            ->money('IDR', locale: 'id'),
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
                         Infolists\Components\TextEntry::make('grand_total')
                             ->label('Total Biaya & Manfee')
-                            ->money('IDR', locale: 'id')
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                             ->weight('bold')
                             ->color('success'),
                     ]),
@@ -500,9 +507,9 @@ class TransportAccommodationRecapResource extends Resource
                             ->columns(['default' => 1, 'md' => 4])
                             ->schema([
                                 Infolists\Components\TextEntry::make('description')->label('Keterangan')->columnSpan(['default' => 1, 'md' => 2]),
-                                Infolists\Components\TextEntry::make('amount')->label('Jumlah')->money('IDR', locale: 'id'),
-                                Infolists\Components\TextEntry::make('service_fee')->label('Service Fee')->money('IDR', locale: 'id'),
-                                Infolists\Components\TextEntry::make('total_amount')->label('Total Biaya')->money('IDR', locale: 'id')->weight('bold'),
+                                Infolists\Components\TextEntry::make('amount')->label('Jumlah')->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
+                                Infolists\Components\TextEntry::make('service_fee')->label('Service Fee')->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
+                                Infolists\Components\TextEntry::make('total_amount')->label('Total Biaya')->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')->weight('bold'),
                                 Infolists\Components\TextEntry::make('evidence_files')
                                     ->label('Bukti / Invoice')
                                     ->html()

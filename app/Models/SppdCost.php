@@ -38,6 +38,17 @@ class SppdCost extends Model
                 }
             }
         });
+
+        static::updated(function (SppdCost $cost) {
+            if ($cost->wasChanged('status') && $cost->status === 'approved') {
+                $cost->loadMissing('sppd');
+                $date = $cost->sppd?->departure_date
+                    ? \Carbon\Carbon::parse($cost->sppd->departure_date)
+                    : ($cost->created_at ?? now());
+
+                OfficialTravelRecap::syncForMonth((int) $date->month, (int) $date->year, $cost->creator_id);
+            }
+        });
     }
 
     protected $fillable = [
@@ -98,6 +109,7 @@ class SppdCost extends Model
         'total_cost',
         'status',
         'notes',
+        'status',
 
         // Evidence / Bukti Foto atau PDF
         'transport_evidence',
@@ -170,6 +182,60 @@ class SppdCost extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'creator_id');
+    }
+
+    public function approvalRequests()
+    {
+        return $this->morphMany(ApprovalRequest::class, 'document');
+    }
+
+    public function ensureApprovalRequestExists(?Employee $requester = null): ApprovalRequest
+    {
+        $policy = ApprovalPolicy::firstOrCreate(
+            ['model_type' => static::class],
+            ['name' => 'Persetujuan Biaya SPPD']
+        );
+
+        $step = ApprovalPolicyStep::firstOrCreate(
+            ['approval_policy_id' => $policy->id, 'step_order' => 1],
+            [
+                'step_name' => 'Persetujuan Manajer',
+                'resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class,
+            ]
+        );
+
+        $requesterId = $requester?->id
+            ?? $this->creator?->employee?->id
+            ?? $this->sppd?->employee_id
+            ?? Employee::first()?->id;
+
+        $this->status = 'pending';
+        $this->saveQuietly();
+
+        $existing = ApprovalRequest::where('document_type', static::class)
+            ->where('document_id', $this->id)
+            ->latest('id')
+            ->first();
+
+        if ($existing && $existing->status === 'pending') {
+            return $existing;
+        }
+
+        $request = ApprovalRequest::create([
+            'document_type' => static::class,
+            'document_id' => $this->id,
+            'approval_policy_id' => $policy->id,
+            'requester_employee_id' => $requesterId,
+            'status' => 'pending',
+        ]);
+
+        ApprovalStep::create([
+            'approval_request_id' => $request->id,
+            'approval_policy_step_id' => $step->id,
+            'status' => 'pending',
+        ]);
+
+        return $request;
     }
 
     /**

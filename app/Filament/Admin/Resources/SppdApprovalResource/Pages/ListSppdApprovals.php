@@ -31,15 +31,15 @@ class ListSppdApprovals extends ListRecords
         return [
             'pending' => Tab::make('Menunggu Persetujuan')
                 ->icon('heroicon-m-clock')
-                ->badge(fn () => static::getResource()::getEloquentQuery()->where('status', 'pending')->count())
+                ->badge(fn () => SppdApprovalResource::applyActionablePendingScope(static::getResource()::getEloquentQuery())->count())
                 ->badgeColor('warning')
-                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', 'pending')),
+                ->modifyQueryUsing(fn (Builder $query) => SppdApprovalResource::applyActionablePendingScope($query)),
 
             'approved' => Tab::make('Disetujui')
                 ->icon('heroicon-m-check-circle')
-                ->badge(fn () => static::getResource()::getEloquentQuery()->where('status', 'approved')->count())
+                ->badge(fn () => SppdApprovalResource::applySupervisorApprovedScope(static::getResource()::getEloquentQuery())->count())
                 ->badgeColor('success')
-                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', 'approved')),
+                ->modifyQueryUsing(fn (Builder $query) => SppdApprovalResource::applySupervisorApprovedScope($query)),
 
             'rejected' => Tab::make('Ditolak')
                 ->icon('heroicon-m-x-circle')

@@ -581,9 +581,42 @@ class SppdCostResource extends Resource
                         ->label('Status Biaya')
                         ->badge()
                         ->grow(false)
-                        ->state(fn (Sppd $record) => $record->cost ? 'Sudah Dihitung' : 'Belum Dihitung')
-                        ->color(fn (Sppd $record) => $record->cost ? 'success' : 'warning')
-                        ->icon(fn (Sppd $record) => $record->cost ? 'heroicon-m-check-circle' : 'heroicon-m-clock'),
+                        ->state(function (Sppd $record): string {
+                            if (! $record->cost) {
+                                return 'Belum Dihitung';
+                            }
+
+                            return match ($record->cost->status) {
+                                'approved' => 'Disetujui Manajer',
+                                'pending' => 'Menunggu Manajer',
+                                'rejected' => 'Ditolak',
+                                default => 'Draf',
+                            };
+                        })
+                        ->color(function (Sppd $record): string {
+                            if (! $record->cost) {
+                                return 'warning';
+                            }
+
+                            return match ($record->cost->status) {
+                                'approved' => 'success',
+                                'pending' => 'info',
+                                'rejected' => 'danger',
+                                default => 'gray',
+                            };
+                        })
+                        ->icon(function (Sppd $record): string {
+                            if (! $record->cost) {
+                                return 'heroicon-m-clock';
+                            }
+
+                            return match ($record->cost->status) {
+                                'approved' => 'heroicon-m-check-badge',
+                                'pending' => 'heroicon-m-clock',
+                                'rejected' => 'heroicon-m-x-circle',
+                                default => 'heroicon-m-document',
+                            };
+                        }),
                     Tables\Columns\TextColumn::make('total_cost')
                         ->label('Total Biaya')
                         ->weight('bold')

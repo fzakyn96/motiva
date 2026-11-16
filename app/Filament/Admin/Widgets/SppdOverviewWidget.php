@@ -25,8 +25,8 @@ class SppdOverviewWidget extends BaseWidget
     {
         $baseQuery = SppdApprovalResource::getEloquentQuery();
 
-        $pendingCount = (clone $baseQuery)->where('status', 'pending')->count();
-        $approvedCount = (clone $baseQuery)->where('status', 'approved')->count();
+        $pendingCount = SppdApprovalResource::applyActionablePendingScope(clone $baseQuery)->count();
+        $approvedCount = SppdApprovalResource::applySupervisorApprovedScope(clone $baseQuery)->count();
         $rejectedCount = (clone $baseQuery)->where('status', 'rejected')->count();
         $totalCount = (clone $baseQuery)->count();
 

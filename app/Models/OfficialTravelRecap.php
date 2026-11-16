@@ -119,4 +119,144 @@ class OfficialTravelRecap extends Model
         $this->grand_total = $totalWorkCost + $manfeeAmount;
         $this->saveQuietly();
     }
+
+    public static function syncForMonth(int $month, int $year, ?int $creatorId = null): ?self
+    {
+        $start = \Carbon\Carbon::create($year, $month, 1)->startOfDay();
+        $end = $start->copy()->endOfMonth()->endOfDay();
+
+        $approvedCosts = SppdCost::with(['sppd.employee', 'sppd.businessTrip.memo'])
+            ->where('status', 'approved')
+            ->whereHas('sppd', function ($q) use ($start, $end) {
+                $q->whereBetween('departure_date', [$start->toDateString(), $end->toDateString()])
+                    ->orWhere(function ($cq) use ($start, $end) {
+                        $cq->whereNull('departure_date')
+                            ->whereBetween('created_at', [$start, $end]);
+                    });
+            })
+            ->orderBy('id')
+            ->get();
+
+        if ($approvedCosts->isEmpty()) {
+            return null;
+        }
+
+        $periodMonth = sprintf('%04d-%02d', $year, $month);
+        $periodLabel = $start->copy()->locale('id')->translatedFormat('F Y');
+        $monthNameId = $start->copy()->locale('id')->translatedFormat('F');
+
+        $tripIds = $approvedCosts->pluck('sppd.business_trip_id')->filter()->unique()->values()->all();
+        $firstSppd = $approvedCosts->first()->sppd;
+        $departmentId = $firstSppd?->employee?->department_id ?? $firstSppd?->businessTrip?->memo?->department_id;
+        $setting = ReimbursementSetting::current();
+
+        $recap = static::where(function ($q) use ($periodMonth, $periodLabel, $monthNameId, $year) {
+            $q->where('period_month', $periodMonth)
+                ->orWhere('period_label', $periodLabel)
+                ->orWhere(function ($mq) use ($monthNameId, $year) {
+                    $mq->where('period_month', $monthNameId)
+                        ->whereYear('created_at', $year);
+                });
+        })
+            ->latest('id')
+            ->first();
+
+        if ($recap && $recap->approvalRequests()->where('status', 'approved')->exists()) {
+            return $recap;
+        }
+
+        if (! $recap) {
+            $recap = static::create([
+                'department_id' => $departmentId,
+                'business_trip_id' => $tripIds[0] ?? null,
+                'business_trip_ids' => $tripIds,
+                'work_name' => 'Rekap Perjalanan Dinas ' . $periodLabel,
+                'period_label' => $periodLabel,
+                'period_month' => $periodMonth,
+                'manfee_percent' => $setting->travel_manfee_percent,
+                'creator_id' => $creatorId ?? auth()->id(),
+            ]);
+        } else {
+            $recap->update([
+                'business_trip_id' => $tripIds[0] ?? $recap->business_trip_id,
+                'business_trip_ids' => $tripIds,
+                'period_month' => $periodMonth,
+                'period_label' => $periodLabel,
+            ]);
+        }
+
+        $recap->items()->delete();
+
+        foreach ($approvedCosts as $index => $cost) {
+            $sppd = $cost->sppd;
+            if (! $sppd) {
+                continue;
+            }
+            $empName = $sppd->employee?->name ?? 'Pegawai';
+            $origin = $sppd->origin_location ?: 'Jakarta';
+            $dest = $sppd->destination_location ?: ($sppd->businessTrip?->destination ?? '-');
+            $depDate = $sppd->departure_date
+                ? \Carbon\Carbon::parse($sppd->departure_date)->locale('id')->translatedFormat('d F Y')
+                : '';
+            $retDate = $sppd->return_date
+                ? \Carbon\Carbon::parse($sppd->return_date)->locale('id')->translatedFormat('d F Y')
+                : '';
+            $dateRange = ($depDate && $retDate) ? " tanggal {$depDate} s/d {$retDate}" : '';
+
+            $recap->items()->create([
+                'sppd_id' => $sppd->id,
+                'sppd_cost_id' => $cost->id,
+                'description' => "SPPD {$empName} dari {$origin} ke {$dest}{$dateRange}",
+                'amount' => (float) $cost->total_cost,
+                'sort_order' => $index + 1,
+            ]);
+        }
+
+        $recap->recalculateTotals();
+
+        return $recap;
+    }
+
+    /**
+     * @return array{months: int, items: int}
+     */
+    public static function syncAllMissingMonths(?int $creatorId = null): array
+    {
+        $syncedCostIds = OfficialTravelRecapItem::whereNotNull('sppd_cost_id')
+            ->pluck('sppd_cost_id')
+            ->all();
+
+        $unsyncedCosts = SppdCost::with('sppd')
+            ->where('status', 'approved')
+            ->when(! empty($syncedCostIds), fn ($q) => $q->whereNotIn('id', $syncedCostIds))
+            ->get();
+
+        if ($unsyncedCosts->isEmpty()) {
+            return ['months' => 0, 'items' => 0];
+        }
+
+        $periods = $unsyncedCosts
+            ->map(function (SppdCost $cost): array {
+                $date = $cost->sppd?->departure_date
+                    ? \Carbon\Carbon::parse($cost->sppd->departure_date)
+                    : ($cost->created_at ?? now());
+
+                return [(int) $date->year, (int) $date->month];
+            })
+            ->unique(fn (array $pair) => sprintf('%04d-%02d', $pair[0], $pair[1]))
+            ->values();
+
+        $syncedMonths = 0;
+        $syncedItems = 0;
+
+        foreach ($periods as [$year, $month]) {
+            $recap = static::syncForMonth($month, $year, $creatorId);
+            if ($recap) {
+                $syncedMonths++;
+                $syncedItems += $recap->items()->count();
+            }
+        }
+
+        return ['months' => $syncedMonths, 'items' => $syncedItems];
+    }
 }

@@ -47,12 +47,12 @@ class ReimbursementRecapTest extends TestCase
     {
         $this->assertFalse(class_exists(\App\Filament\Admin\Resources\ReimbursementResource::class));
         $this->assertFalse(class_exists(\App\Filament\Admin\Resources\ReimbursementApprovalResource::class));
-        $this->assertTrue(TransportAccommodationRecapResource::shouldRegisterNavigation());
-        $this->assertTrue(OfficialTravelRecapResource::shouldRegisterNavigation());
 
         $hr = User::factory()->create();
         $hr->assignRole('HR');
         $this->actingAs($hr);
+        $this->assertTrue(TransportAccommodationRecapResource::shouldRegisterNavigation());
+        $this->assertTrue(OfficialTravelRecapResource::shouldRegisterNavigation());
         $this->assertTrue(TransportAccommodationRecapResource::canCreate());
         $this->assertTrue(OfficialTravelRecapResource::canCreate());
 
@@ -76,16 +76,17 @@ class ReimbursementRecapTest extends TestCase
 
         Livewire::test(ReimbursementSettingsPage::class)
             ->assertSuccessful()
+            ->assertDontSee('Service Fee Transportasi & Akomodasi (%)')
             ->fillForm([
-                'transport_service_fee_percent' => 10,
-                'transport_manfee_percent' => 5,
-                'travel_manfee_percent' => 6,
+                'transport_manfee_percent' => 7.5,
+                'travel_manfee_percent' => 8,
             ])
             ->call('save')
             ->assertHasNoFormErrors();
 
         $updated = ReimbursementSetting::current()->fresh();
-        $this->assertEquals(10.0, (float) $updated->transport_service_fee_percent);
+        $this->assertEquals(7.5, (float) $updated->transport_manfee_percent);
+        $this->assertEquals(8.0, (float) $updated->travel_manfee_percent);
     }
 
     public function test_hr_creates_recaps_with_autofill_and_manager_plus_division_head_approve_and_sign(): void
@@ -274,28 +275,30 @@ class ReimbursementRecapTest extends TestCase
             ->callTableAction('submit_recap', $travelRecap)
             ->assertHasNoTableActionErrors();
 
-        // 4. Manajer memeriksa detail & menandatangani (via View & List), lalu Division Head menyetujui & menandatangani
+        // 4. Manajer memeriksa detail & menandatangani di halaman Review, lalu Division Head menyetujui & menandatangani di halaman Review
         $evidencePath = $transportRecap->items()->firstOrFail()->evidence_files[0] ?? null;
         $this->assertNotNull($evidencePath);
 
         $this->actingAs($nuramzanUser);
         $this->get(route('attachments.show', ['path' => $evidencePath]))->assertSuccessful();
-        Livewire::test(\App\Filament\Admin\Resources\TransportAccommodationRecapResource\Pages\ViewTransportAccommodationRecap::class, ['record' => $transportRecap->id])
-            ->assertSuccessful()
-            ->assertSee('Tiket Pesawat Chairunnisa Jakarta-Batam')
-            ->assertActionVisible('approve_recap');
 
         Livewire::test(ListTransportAccommodationRecaps::class)
             ->assertTableActionVisible('view', $transportRecap)
-            ->assertTableActionVisible('approve_recap', $transportRecap)
-            ->callTableAction('approve_recap', $transportRecap, data: ['notes' => 'Diperiksa Manajer'])
-            ->assertHasNoTableActionErrors();
+            ->assertTableActionHidden('submit_recap', $transportRecap)
+            ->assertTableActionDoesNotExist('approve_recap');
 
-        Livewire::test(ListOfficialTravelRecaps::class)
-            ->assertTableActionVisible('view', $travelRecap)
-            ->assertTableActionVisible('approve_recap', $travelRecap)
-            ->callTableAction('approve_recap', $travelRecap, data: ['notes' => 'Diperiksa Manajer'])
-            ->assertHasNoTableActionErrors();
+        Livewire::test(\App\Filament\Admin\Resources\TransportAccommodationRecapResource\Pages\ViewTransportAccommodationRecap::class, ['record' => $transportRecap->id])
+            ->assertSuccessful()
+            ->assertSee('Tiket Pesawat Chairunnisa Jakarta-Batam')
+            ->assertActionVisible('approve_recap')
+            ->callAction('approve_recap', data: ['notes' => 'Diperiksa Manajer'])
+            ->assertHasNoActionErrors();
+
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ViewOfficialTravelRecap::class, ['record' => $travelRecap->id])
+            ->assertSuccessful()
+            ->assertActionVisible('approve_recap')
+            ->callAction('approve_recap', data: ['notes' => 'Diperiksa Manajer'])
+            ->assertHasNoActionErrors();
 
         $sppdCost = $travelRecap->items()->firstOrFail()->sppdCost;
 
@@ -309,24 +312,25 @@ class ReimbursementRecapTest extends TestCase
             ->assertSuccessful()
             ->assertHeader('Content-Type', 'application/pdf');
         $this->get(route('attachments.show', ['path' => $evidencePath]))->assertSuccessful();
+
+        Livewire::test(\App\Filament\Admin\Resources\TransportAccommodationRecapResource\Pages\ViewTransportAccommodationRecap::class, ['record' => $transportRecap->id])
+            ->assertSuccessful()
+            ->assertActionVisible('approve_recap')
+            ->callAction('approve_recap', data: ['notes' => 'Disetujui Division Head'])
+            ->assertHasNoActionErrors();
+
         Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ViewOfficialTravelRecap::class, ['record' => $travelRecap->id])
             ->assertSuccessful()
             ->assertSee('Rincian Komponen Biaya SPPD')
             ->assertSee('Tiket Transportasi')
             ->assertSee('Lihat Rincian SPPD (PDF)')
-            ->assertActionVisible('approve_recap');
-
-        Livewire::test(ListTransportAccommodationRecaps::class)
-            ->assertTableActionVisible('view', $transportRecap)
-            ->assertTableActionVisible('approve_recap', $transportRecap)
-            ->callTableAction('approve_recap', $transportRecap, data: ['notes' => 'Disetujui Division Head'])
-            ->assertHasNoTableActionErrors();
+            ->assertActionVisible('approve_recap')
+            ->callAction('approve_recap', data: ['notes' => 'Disetujui Division Head'])
+            ->assertHasNoActionErrors();
 
         Livewire::test(ListOfficialTravelRecaps::class)
             ->assertTableActionVisible('view', $travelRecap)
-            ->assertTableActionVisible('approve_recap', $travelRecap)
-            ->callTableAction('approve_recap', $travelRecap, data: ['notes' => 'Disetujui Division Head'])
-            ->assertHasNoTableActionErrors()
+            ->assertTableActionHidden('submit_recap', $travelRecap)
             ->filterTable('periode_bulan', ['month' => 11, 'year' => 2026])
             ->assertCanSeeTableRecords([$travelRecap]);
 
@@ -513,31 +517,43 @@ class ReimbursementRecapTest extends TestCase
         Livewire::test(ListTransportAccommodationApprovals::class)
             ->assertSuccessful()
             ->assertCanSeeTableRecords([$transportApproval])
-            ->assertTableActionVisible('approve', $transportApproval)
-            ->callTableAction('approve', $transportApproval, data: ['notes' => 'OK Manager'])
-            ->assertHasNoTableActionErrors();
+            ->assertTableActionVisible('view_detail', $transportApproval)
+            ->assertTableActionDoesNotExist('approve');
+
+        Livewire::test(\App\Filament\Admin\Resources\TransportAccommodationRecapResource\Pages\ViewTransportAccommodationRecap::class, ['record' => $transportRecap->id])
+            ->callAction('approve_recap', data: ['notes' => 'OK Manager'])
+            ->assertHasNoActionErrors();
 
         Livewire::test(ListOfficialTravelApprovals::class)
             ->assertSuccessful()
             ->assertCanSeeTableRecords([$travelApproval])
-            ->assertTableActionVisible('approve', $travelApproval)
-            ->callTableAction('approve', $travelApproval, data: ['notes' => 'OK Manager'])
-            ->assertHasNoTableActionErrors();
+            ->assertTableActionVisible('view_detail', $travelApproval)
+            ->assertTableActionDoesNotExist('approve');
+
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ViewOfficialTravelRecap::class, ['record' => $travelRecap->id])
+            ->callAction('approve_recap', data: ['notes' => 'OK Manager'])
+            ->assertHasNoActionErrors();
 
         $this->actingAs($herryUser);
         Livewire::test(ListTransportAccommodationApprovals::class)
             ->assertSuccessful()
             ->assertCanSeeTableRecords([$transportApproval])
-            ->assertTableActionVisible('approve', $transportApproval)
-            ->callTableAction('approve', $transportApproval, data: ['notes' => 'OK Division Head'])
-            ->assertHasNoTableActionErrors();
+            ->assertTableActionVisible('view_detail', $transportApproval)
+            ->assertTableActionDoesNotExist('approve');
+
+        Livewire::test(\App\Filament\Admin\Resources\TransportAccommodationRecapResource\Pages\ViewTransportAccommodationRecap::class, ['record' => $transportRecap->id])
+            ->callAction('approve_recap', data: ['notes' => 'OK Division Head'])
+            ->assertHasNoActionErrors();
 
         Livewire::test(ListOfficialTravelApprovals::class)
             ->assertSuccessful()
             ->assertCanSeeTableRecords([$travelApproval])
-            ->assertTableActionVisible('approve', $travelApproval)
-            ->callTableAction('approve', $travelApproval, data: ['notes' => 'OK Division Head'])
-            ->assertHasNoTableActionErrors();
+            ->assertTableActionVisible('view_detail', $travelApproval)
+            ->assertTableActionDoesNotExist('approve');
+
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ViewOfficialTravelRecap::class, ['record' => $travelRecap->id])
+            ->callAction('approve_recap', data: ['notes' => 'OK Division Head'])
+            ->assertHasNoActionErrors();
 
         $this->assertSame('approved', $transportApproval->fresh()->status);
         $this->assertSame('approved', $travelApproval->fresh()->status);

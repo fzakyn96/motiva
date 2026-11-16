@@ -5,18 +5,11 @@
         ->where('document_id', $record->id)
         ->first();
 
-    // Resolve Manager name for this memo
-    $manager = $record->creator?->manager;
-    if (! $manager && $record->department_id) {
-        $manager = \App\Models\Employee::where('department_id', $record->department_id)
-            ->whereHas('position', fn ($q) => $q->where('name', 'like', '%Manager%'))
-            ->first();
-    }
-    if (! $manager && $record->department_id) {
-        $manager = \App\Models\Employee::where('department_id', $record->department_id)
-            ->whereHas('user.roles', fn ($q) => $q->where('name', 'Manager'))
-            ->first();
-    }
+    // Resolve Manager name for this memo using authority hierarchy (not direct Supervisor)
+    $manager = \App\Services\Approval\Resolvers\ManagerAuthorityResolver::resolveManagerForEmployee(
+        $record->creator,
+        $record->department_id
+    );
     $defaultManagerName = $manager ? $manager->name : 'Manajer';
 @endphp
 

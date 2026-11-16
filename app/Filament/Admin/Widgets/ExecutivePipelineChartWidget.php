@@ -3,15 +3,16 @@
 namespace App\Filament\Admin\Widgets;
 
 use App\Models\Memo;
-use App\Models\Reimbursement;
+use App\Models\OfficialTravelRecap;
 use App\Models\Sppd;
+use App\Models\TransportAccommodationRecap;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Database\Eloquent\Builder;
 
 class ExecutivePipelineChartWidget extends ChartWidget
 {
     protected static ?string $heading = 'Pipeline & Distribusi Status Dokumen Perjalanan Dinas';
-    protected static ?string $description = 'Rekapitulasi progres penyelesaian Memo Dinas, SPPD, Kalkulasi Biaya, dan Reimbursement';
+    protected static ?string $description = 'Rekapitulasi progres penyelesaian Memo Dinas, SPPD, Kalkulasi Biaya, dan Rekap Tagihan';
     protected static ?int $sort = 3;
 
     protected int | string | array $columnSpan = [
@@ -26,14 +27,14 @@ class ExecutivePipelineChartWidget extends ChartWidget
             return false;
         }
 
-        return $user->hasAnyRole(['Manager', 'Supervisor', 'Superadmin', 'Admin', 'HR']);
+        return $user->hasAnyRole(['Division Head', 'Manager', 'Supervisor', 'Superadmin', 'Admin', 'HR']);
     }
 
     protected function getData(): array
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
-        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR']);
+        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']);
 
         // 1. Memo Query
         $memoQuery = Memo::query();
@@ -67,25 +68,40 @@ class ExecutivePipelineChartWidget extends ChartWidget
         $costCalculated = (clone $sppdQuery)->where('status', 'approved')->has('cost')->count();
         $costUncalculated = (clone $sppdQuery)->where('status', 'approved')->doesntHave('cost')->count();
 
-        // 4. Reimbursement Query
-        $reimbQuery = Reimbursement::query();
-        if (! $isAllAccess && $employee) {
-            $reimbQuery->whereHas('employee', function (Builder $q) use ($employee) {
-                $q->where('department_id', $employee->department_id)
-                    ->orWhere('manager_id', $employee->id)
-                    ->orWhere('id', $employee->id);
-            });
+        // 4. Rekap Tiket & Akomodasi vs Rekap Perjalanan Dinas (terpisah)
+        $transportRecaps = TransportAccommodationRecap::with('approvalRequests');
+        $travelRecaps = OfficialTravelRecap::with('approvalRequests');
+        if (! $isAllAccess && $employee?->department_id) {
+            $transportRecaps->where('department_id', $employee->department_id);
+            $travelRecaps->where('department_id', $employee->department_id);
         }
 
-        $reimbApproved = (clone $reimbQuery)->where('status', 'approved')->count();
-        $reimbPending = (clone $reimbQuery)->where('status', 'pending')->count();
-        $reimbOther = (clone $reimbQuery)->whereIn('status', ['draft', 'rejected'])->count();
+        $countRecapByStatus = function ($recaps): array {
+            $approved = 0;
+            $pending = 0;
+            $other = 0;
+            foreach ($recaps as $recap) {
+                $status = $recap->approvalRequests->sortByDesc('id')->first()?->status;
+                if ($status === 'approved') {
+                    $approved++;
+                } elseif ($status === 'pending') {
+                    $pending++;
+                } else {
+                    $other++;
+                }
+            }
+
+            return [$approved, $pending, $other];
+        };
+
+        [$transportApproved, $transportPending, $transportOther] = $countRecapByStatus($transportRecaps->get());
+        [$travelApproved, $travelPending, $travelOther] = $countRecapByStatus($travelRecaps->get());
 
         return [
             'datasets' => [
                 [
                     'label' => 'Disetujui / Terhitung',
-                    'data' => [$memoApproved, $sppdApproved, $costCalculated, $reimbApproved],
+                    'data' => [$memoApproved, $sppdApproved, $costCalculated, $transportApproved, $travelApproved],
                     'backgroundColor' => '#10b981',
                     'borderColor' => '#059669',
                     'borderWidth' => 1,
@@ -93,7 +109,7 @@ class ExecutivePipelineChartWidget extends ChartWidget
                 ],
                 [
                     'label' => 'Menunggu Proses / Hitung',
-                    'data' => [$memoPending, $sppdPending, $costUncalculated, $reimbPending],
+                    'data' => [$memoPending, $sppdPending, $costUncalculated, $transportPending, $travelPending],
                     'backgroundColor' => '#f59e0b',
                     'borderColor' => '#d97706',
                     'borderWidth' => 1,
@@ -101,14 +117,14 @@ class ExecutivePipelineChartWidget extends ChartWidget
                 ],
                 [
                     'label' => 'Draf / Ditolak',
-                    'data' => [$memoOther, $sppdOther, 0, $reimbOther],
+                    'data' => [$memoOther, $sppdOther, 0, $transportOther, $travelOther],
                     'backgroundColor' => '#94a3b8',
                     'borderColor' => '#64748b',
                     'borderWidth' => 1,
                     'borderRadius' => 6,
                 ],
             ],
-            'labels' => ['Memo Dinas', 'SPPD', 'Kalkulasi Biaya', 'Reimbursement'],
+            'labels' => ['Memo Dinas', 'SPPD', 'Kalkulasi Biaya', 'Rekap Tiket & Akomodasi', 'Rekap Perjalanan Dinas'],
         ];
     }
 

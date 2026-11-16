@@ -153,19 +153,19 @@ class SppdCostLogResource extends Resource
 
                         Infolists\Components\TextEntry::make('subtotal_transport')
                             ->label('Subtotal Transport')
-                            ->money('IDR', locale: 'id'),
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
 
                         Infolists\Components\TextEntry::make('subtotal_per_diem')
                             ->label('Subtotal Uang Harian & Penginapan')
-                            ->money('IDR', locale: 'id'),
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
 
                         Infolists\Components\TextEntry::make('subtotal_other')
                             ->label('Subtotal Biaya Lainnya')
-                            ->money('IDR', locale: 'id'),
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
 
                         Infolists\Components\TextEntry::make('total_cost')
                             ->label('Total Biaya SPPD')
-                            ->money('IDR', locale: 'id')
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                             ->weight(FontWeight::Bold)
                             ->color('success'),
                     ]),
@@ -208,7 +208,7 @@ class SppdCostLogResource extends Resource
 
                 Tables\Columns\TextColumn::make('total_cost')
                     ->label('Total Biaya SPPD')
-                    ->money('IDR', locale: 'id')
+                    ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                     ->sortable()
                     ->weight(FontWeight::Bold)
                     ->color('success'),

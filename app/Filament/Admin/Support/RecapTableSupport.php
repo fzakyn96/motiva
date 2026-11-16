@@ -66,17 +66,17 @@ class RecapTableSupport
     {
         $actions = [
             Tables\Actions\Action::make('submit_recap')
-                ->label('Ajukan Review')
+                ->label('Ajukan')
                 ->icon('heroicon-o-paper-airplane')
                 ->color('primary')
                 ->button()
                 ->size('sm')
                 ->requiresConfirmation()
-                ->modalHeading('Ajukan Review & Persetujuan Rekap')
+                ->modalHeading('Ajukan Persetujuan Rekap')
                 ->modalDescription('Rekap akan diajukan untuk diperiksa oleh Manajer Unit Kerja dan disetujui oleh Division Head.')
                 ->visible(function (Model $record): bool {
                     $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-                    if (! $user || ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Manager'])) {
+                    if (! $user || ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
                         return false;
                     }
 
@@ -109,119 +109,32 @@ class RecapTableSupport
                         ->send();
                 }),
 
-            Tables\Actions\Action::make('approve_recap')
-                ->label(function (Model $record): string {
-                    $req = static::latestApproval($record);
-                    $step = $req?->currentStep();
-
-                    return $step?->policyStep?->resolver_class === DivisionHeadAuthorityResolver::class
-                        ? 'Setujui & Tandatangani'
-                        : 'Periksa & Tandatangani';
-                })
-                ->icon('heroicon-o-check-badge')
-                ->color('success')
-                ->button()
-                ->size('sm')
-                ->form([
-                    Textarea::make('notes')
-                        ->label('Catatan Persetujuan (Opsional)')
-                        ->rows(2),
-                ])
-                ->modalHeading('Konfirmasi Persetujuan & Tanda Tangan Rekap')
-                ->modalSubmitActionLabel('Ya, Setujui & Tandatangani')
-                ->visible(function (Model $record): bool {
-                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-                    $employee = $user?->employee;
-                    if (! $employee) {
-                        return false;
-                    }
-
-                    $req = static::latestApproval($record);
-                    if (! $req || $req->status !== 'pending') {
-                        return false;
-                    }
-
-                    return (new ApprovalResolver())->canApprove($req, $employee);
-                })
-                ->action(function (Model $record, array $data): void {
-                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-                    $employee = $user?->employee;
-                    if (! $employee) {
-                        return;
-                    }
-
-                    if (! app(SignatureService::class)->ensureUserCanSign($user)) {
-                        return;
-                    }
-
-                    $req = static::latestApproval($record);
-                    if (! $req) {
-                        return;
-                    }
-
-                    (new ApprovalResolver())->approve($req, $employee, $data['notes'] ?? null);
-
-                    Notification::make()
-                        ->title('Rekap Disetujui & Ditandatangani')
-                        ->body('Persetujuan dan tanda tangan digital Anda telah tercatat pada dokumen rekap.')
-                        ->success()
-                        ->send();
-                }),
-
-            Tables\Actions\Action::make('reject_recap')
-                ->label('Tolak')
-                ->icon('heroicon-o-x-circle')
-                ->color('danger')
-                ->button()
-                ->size('sm')
-                ->form([
-                    Textarea::make('notes')
-                        ->label('Alasan Penolakan')
-                        ->required()
-                        ->rows(2),
-                ])
-                ->modalHeading('Tolak Rekap Reimbursement')
-                ->modalSubmitActionLabel('Tolak Rekap')
-                ->visible(function (Model $record): bool {
-                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-                    $employee = $user?->employee;
-                    if (! $employee) {
-                        return false;
-                    }
-
-                    $req = static::latestApproval($record);
-                    if (! $req || $req->status !== 'pending') {
-                        return false;
-                    }
-
-                    return (new ApprovalResolver())->canApprove($req, $employee);
-                })
-                ->action(function (Model $record, array $data): void {
-                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-                    $employee = $user?->employee;
-                    $req = static::latestApproval($record);
-                    if (! $employee || ! $req) {
-                        return;
-                    }
-
-                    (new ApprovalResolver())->reject($req, $employee, $data['notes']);
-
-                    Notification::make()
-                        ->title('Rekap Ditolak')
-                        ->body('Status rekap telah diperbarui menjadi ditolak.')
-                        ->warning()
-                        ->send();
-                }),
-
             Tables\Actions\ViewAction::make()
-                ->label('Detail & Review')
+                ->label(function (Model $record): string {
+                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                    $employee = $user?->employee;
+                    $req = static::latestApproval($record);
+                    if ($employee && $req && $req->status === 'pending' && (new ApprovalResolver())->canApprove($req, $employee)) {
+                        return 'Review';
+                    }
+
+                    return 'Lihat';
+                })
                 ->icon('heroicon-o-eye')
-                ->color('gray')
+                ->color(function (Model $record): string {
+                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                    $employee = $user?->employee;
+                    $req = static::latestApproval($record);
+
+                    return ($employee && $req && $req->status === 'pending' && (new ApprovalResolver())->canApprove($req, $employee))
+                        ? 'warning'
+                        : 'gray';
+                })
                 ->button()
                 ->size('sm'),
 
             Tables\Actions\Action::make('print')
-                ->label('Cetak PDF')
+                ->label('Cetak')
                 ->icon('heroicon-o-printer')
                 ->color('info')
                 ->button()
@@ -364,7 +277,7 @@ class RecapTableSupport
                 }),
 
             Actions\Action::make('print')
-                ->label('Cetak PDF')
+                ->label('Cetak')
                 ->icon('heroicon-o-printer')
                 ->color('info')
                 ->url(fn () => route($printRouteName, $record))
@@ -477,7 +390,7 @@ class RecapTableSupport
                         ->searchable(),
                     Tables\Columns\TextColumn::make('document.grand_total')
                         ->label('Total Biaya')
-                        ->money('IDR', locale: 'id')
+                        ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                         ->badge()
                         ->color('success')
                         ->grow(false),
@@ -531,85 +444,27 @@ class RecapTableSupport
             ])
             ->actions([
                 Tables\Actions\Action::make('view_detail')
-                    ->label('Detail & Review')
+                    ->label(function (ApprovalRequest $record): string {
+                        $employee = (\Filament\Facades\Filament::auth()->user() ?? auth()->user())?->employee;
+
+                        return ($employee && $record->status === 'pending' && (new ApprovalResolver())->canApprove($record, $employee))
+                            ? 'Review'
+                            : 'Lihat';
+                    })
                     ->icon('heroicon-o-eye')
-                    ->color('gray')
+                    ->color(function (ApprovalRequest $record): string {
+                        $employee = (\Filament\Facades\Filament::auth()->user() ?? auth()->user())?->employee;
+
+                        return ($employee && $record->status === 'pending' && (new ApprovalResolver())->canApprove($record, $employee))
+                            ? 'warning'
+                            : 'gray';
+                    })
                     ->button()
                     ->size('sm')
                     ->url(fn (ApprovalRequest $record) => $recapResourceClass::getUrl('view', ['record' => $record->document_id])),
 
-                Tables\Actions\Action::make('approve')
-                    ->label(fn (ApprovalRequest $record): string => $record->currentStep()?->policyStep?->resolver_class === DivisionHeadAuthorityResolver::class
-                        ? 'Setujui & Tandatangani'
-                        : 'Periksa & Tandatangani')
-                    ->icon('heroicon-o-check-badge')
-                    ->color('success')
-                    ->button()
-                    ->size('sm')
-                    ->form([
-                        Textarea::make('notes')
-                            ->label('Catatan Persetujuan (Opsional)')
-                            ->rows(2),
-                    ])
-                    ->modalHeading('Konfirmasi Persetujuan & Tanda Tangan Rekap')
-                    ->modalSubmitActionLabel('Ya, Setujui & Tandatangani')
-                    ->visible(function (ApprovalRequest $record): bool {
-                        $employee = (\Filament\Facades\Filament::auth()->user() ?? auth()->user())?->employee;
-
-                        return $employee && $record->status === 'pending' && (new ApprovalResolver())->canApprove($record, $employee);
-                    })
-                    ->action(function (ApprovalRequest $record, array $data): void {
-                        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-                        $employee = $user?->employee;
-                        if (! $employee || ! app(SignatureService::class)->ensureUserCanSign($user)) {
-                            return;
-                        }
-
-                        (new ApprovalResolver())->approve($record, $employee, $data['notes'] ?? null);
-
-                        Notification::make()
-                            ->title('Rekap Disetujui & Ditandatangani')
-                            ->body('Persetujuan dan tanda tangan digital Anda telah tercatat.')
-                            ->success()
-                            ->send();
-                    }),
-
-                Tables\Actions\Action::make('reject')
-                    ->label('Tolak')
-                    ->icon('heroicon-o-x-circle')
-                    ->color('danger')
-                    ->button()
-                    ->size('sm')
-                    ->form([
-                        Textarea::make('notes')
-                            ->label('Alasan Penolakan')
-                            ->required()
-                            ->rows(2),
-                    ])
-                    ->modalHeading('Tolak Rekap Reimbursement')
-                    ->modalSubmitActionLabel('Tolak Rekap')
-                    ->visible(function (ApprovalRequest $record): bool {
-                        $employee = (\Filament\Facades\Filament::auth()->user() ?? auth()->user())?->employee;
-
-                        return $employee && $record->status === 'pending' && (new ApprovalResolver())->canApprove($record, $employee);
-                    })
-                    ->action(function (ApprovalRequest $record, array $data): void {
-                        $employee = (\Filament\Facades\Filament::auth()->user() ?? auth()->user())?->employee;
-                        if (! $employee) {
-                            return;
-                        }
-
-                        (new ApprovalResolver())->reject($record, $employee, $data['notes']);
-
-                        Notification::make()
-                            ->title('Rekap Ditolak')
-                            ->body('Status rekap telah diperbarui menjadi ditolak.')
-                            ->warning()
-                            ->send();
-                    }),
-
                 Tables\Actions\Action::make('print')
-                    ->label('Cetak PDF')
+                    ->label('Cetak')
                     ->icon('heroicon-o-printer')
                     ->color('info')
                     ->button()

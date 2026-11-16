@@ -23,14 +23,27 @@ class SppdPrintController extends Controller
         $signerName = $signer?->name ?? '____________________';
         $signerPosition = $signer?->position?->name ?? 'Manajer';
 
-        $signatureRender = app(\App\Services\Signature\SignatureService::class)->resolveRenderData(
+        $sigService = app(\App\Services\Signature\SignatureService::class);
+        $signatureRender = $sigService->resolveRenderData(
             $sppd,
             $signer,
             'manager',
             $sppd->status === 'approved'
         );
 
-        $pdf = Pdf::loadView('sppds.print', compact('sppd', 'signer', 'signerName', 'signerPosition', 'signatureRender'));
+        $hasEmployeeSigned = \App\Models\DocumentSignature::where('document_type', Sppd::class)
+            ->where('document_id', $sppd->id)
+            ->where('role_type', 'requester')
+            ->exists();
+
+        $employeeSignatureRender = $sigService->resolveRenderData(
+            $sppd,
+            $sppd->employee,
+            'requester',
+            $hasEmployeeSigned
+        );
+
+        $pdf = Pdf::loadView('sppds.print', compact('sppd', 'signer', 'signerName', 'signerPosition', 'signatureRender', 'employeeSignatureRender'));
         $pdf->setPaper('a4', 'portrait');
 
         $cleanNumber = str_replace(['/', '\\'], '-', $sppd->sppd_number ?? (string) $sppd->id);

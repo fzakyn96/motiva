@@ -758,4 +758,70 @@ class DomainMemoTest extends TestCase
         ])->render();
         $this->assertStringContainsString($sppd->sppd_number, $costHtml);
     }
+
+    public function test_memo_approval_trail_resolves_manager_not_supervisor(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        $org = Organization::create(['name' => 'PT Motiva', 'code' => 'MTV']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Jakarta', 'code' => 'JKT']);
+
+        $mgrPos = Position::create(['name' => 'Manager Jakarta', 'code' => 'MGR', 'level' => 1]);
+        $spvPos = Position::create(['name' => 'Supervisor Jakarta', 'code' => 'SPV', 'level' => 2]);
+        $hrPos = Position::create(['name' => 'HR Specialist', 'code' => 'HR', 'level' => 3]);
+
+        $mgrUser = \App\Models\User::factory()->create(['name' => 'M Nuramzan Iftari']);
+        $mgrUser->assignRole('Manager');
+        $mgrEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+            'user_id' => $mgrUser->id,
+            'name' => 'M Nuramzan Iftari',
+            'identity_number' => 'MGR-01',
+        ]);
+
+        $spvUser = \App\Models\User::factory()->create(['name' => 'Ikhsan Aditya Wardana']);
+        $spvUser->assignRole('Supervisor');
+        $spvEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $spvPos->id,
+            'user_id' => $spvUser->id,
+            'manager_id' => $mgrEmp->id,
+            'name' => 'Ikhsan Aditya Wardana',
+            'identity_number' => 'SPV-01',
+        ]);
+
+        $hrUser = \App\Models\User::factory()->create(['name' => 'Maria Ulfah']);
+        $hrUser->assignRole('HR');
+        $hrEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $hrPos->id,
+            'user_id' => $hrUser->id,
+            'manager_id' => $spvEmp->id,
+            'name' => 'Maria Ulfah',
+            'identity_number' => 'HR-01',
+        ]);
+
+        $memo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $hrEmp->id,
+            'to_recipient' => 'Manager Jakarta',
+            'agenda' => 'Penugasan Uji Resolver Manajer',
+            'title' => 'Penugasan Uji Resolver Manajer',
+            'content' => 'Isi memo',
+            'date' => '2026-11-17',
+            'status' => 'pending',
+            'participants' => [$hrEmp->id],
+        ]);
+
+        $this->actingAs($mgrUser);
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\MemoResource\Pages\ReviewMemo::class, ['record' => $memo->getKey()])
+            ->assertSuccessful()
+            ->assertSee('Manajer: M Nuramzan Iftari')
+            ->assertDontSee('Manajer: Ikhsan Aditya Wardana');
+    }
 }

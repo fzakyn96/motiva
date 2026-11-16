@@ -14,7 +14,7 @@ class EditTransportAccommodationRecap extends EditRecord
     {
         return [
             Actions\Action::make('print')
-                ->label('Cetak PDF')
+                ->label('Cetak')
                 ->icon('heroicon-o-printer')
                 ->color('info')
                 ->url(fn () => route('recaps.transport.print', $this->getRecord()))

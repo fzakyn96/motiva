@@ -958,4 +958,306 @@ class DomainSppdTest extends TestCase
             ->assertSee('Kategori wilayah perjalanan dinas (poin 9) wajib dipilih.')
             ->assertDontSee('validation.required');
     }
+
+    public function test_hr_can_apply_same_sppd_form_to_selected_siblings_and_leave_different_ones_in_draft(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+        \App\Models\SppdSetting::current()->update(['form_filler_role' => 'HR']);
+
+        $org = Organization::create(['name' => 'PT Motiva', 'code' => 'MTV']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Jakarta', 'code' => 'JKT']);
+        $pos = Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $hrUser = User::factory()->create(['name' => 'HR Admin']);
+        $hrUser->assignRole('HR');
+
+        $emp1 = Employee::create(['organization_id' => $org->id, 'department_id' => $dept->id, 'position_id' => $pos->id, 'name' => 'Pegawai Satu', 'identity_number' => 'EMP-01']);
+        $emp2 = Employee::create(['organization_id' => $org->id, 'department_id' => $dept->id, 'position_id' => $pos->id, 'name' => 'Pegawai Dua', 'identity_number' => 'EMP-02']);
+        $emp3 = Employee::create(['organization_id' => $org->id, 'department_id' => $dept->id, 'position_id' => $pos->id, 'name' => 'Pegawai Tiga', 'identity_number' => 'EMP-03']);
+
+        $trip = BusinessTrip::create([
+            'activity_name' => 'Kunjungan Lapangan',
+            'destination' => 'Lampung',
+            'start_date' => '2026-11-20',
+            'end_date' => '2026-11-22',
+        ]);
+
+        $sppd1 = Sppd::create(['business_trip_id' => $trip->id, 'employee_id' => $emp1->id, 'status' => 'draft']);
+        $sppd2 = Sppd::create(['business_trip_id' => $trip->id, 'employee_id' => $emp2->id, 'status' => 'draft']);
+        $sppd3 = Sppd::create(['business_trip_id' => $trip->id, 'employee_id' => $emp3->id, 'status' => 'draft']);
+
+        $this->actingAs($hrUser);
+
+        // HR mengisi SPPD 1 dan mencentang SPPD 2 (isian sama), sementara SPPD 3 tidak dicentang (isian berbeda)
+        Livewire::test(EditSppd::class, ['record' => $sppd1->getKey()])
+            ->fillForm([
+                'origin_location' => 'Jakarta',
+                'destination_location' => 'Lampung',
+                'assignment_purpose' => 'Inspeksi Pipa',
+                'departure_date' => '2026-11-20',
+                'departure_time' => '08:00',
+                'return_date' => '2026-11-22',
+                'return_time' => '17:00',
+                'total_days' => 3,
+                'travel_category' => 'Dalam Negeri',
+                'general_travel_type' => 'Sementara',
+                'special_travel_type' => 'Lainnya',
+                'transport_departure' => 'Ditanggung Perusahaan',
+                'transport_arrival' => 'Ditanggung Perusahaan',
+                'transportation_mode' => 'Pesawat Udara',
+                'destination_transportation' => ['Kendaraan Dinas/Operasional'],
+                'apply_to_sibling_sppd_ids' => [$sppd2->id],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('pending', $sppd1->fresh()->status);
+        $this->assertSame('pending', $sppd2->fresh()->status);
+        $this->assertSame('Pesawat Udara', $sppd2->fresh()->transportation_mode);
+        $this->assertSame('Lampung', $sppd2->fresh()->destination_location);
+        $this->assertDatabaseHas('approval_requests', [
+            'document_type' => Sppd::class,
+            'document_id' => $sppd2->id,
+        ]);
+
+        // SPPD 3 tetap draft agar bisa diisi dengan detail berbeda
+        $this->assertSame('draft', $sppd3->fresh()->status);
+        $this->assertNull($sppd3->fresh()->transportation_mode);
+    }
+
+    public function test_hr_can_bulk_fill_selected_draft_sppds_and_leave_others_for_individual_edit(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+        \App\Models\SppdSetting::current()->update(['form_filler_role' => 'HR']);
+
+        $org = Organization::create(['name' => 'PT Motiva', 'code' => 'MTV']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Jakarta', 'code' => 'JKT']);
+        $pos = Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $hrUser = User::factory()->create(['name' => 'HR Admin']);
+        $hrUser->assignRole('HR');
+
+        $emp1 = Employee::create(['organization_id' => $org->id, 'department_id' => $dept->id, 'position_id' => $pos->id, 'name' => 'Pegawai A', 'identity_number' => 'EMP-A']);
+        $emp2 = Employee::create(['organization_id' => $org->id, 'department_id' => $dept->id, 'position_id' => $pos->id, 'name' => 'Pegawai B', 'identity_number' => 'EMP-B']);
+        $emp3 = Employee::create(['organization_id' => $org->id, 'department_id' => $dept->id, 'position_id' => $pos->id, 'name' => 'Pegawai C', 'identity_number' => 'EMP-C']);
+
+        $trip = BusinessTrip::create([
+            'activity_name' => 'Audit Surabaya',
+            'destination' => 'Surabaya',
+            'start_date' => '2026-11-25',
+            'end_date' => '2026-11-27',
+        ]);
+
+        $sppdA = Sppd::create(['business_trip_id' => $trip->id, 'employee_id' => $emp1->id, 'status' => 'draft']);
+        $sppdB = Sppd::create(['business_trip_id' => $trip->id, 'employee_id' => $emp2->id, 'status' => 'draft']);
+        $sppdC = Sppd::create(['business_trip_id' => $trip->id, 'employee_id' => $emp3->id, 'status' => 'draft']);
+
+        $this->actingAs($hrUser);
+
+        Livewire::test(\App\Filament\Admin\Resources\SppdResource\Pages\ListSppds::class)
+            ->assertTableBulkActionVisible('bulk_fill_sppd')
+            ->callTableBulkAction('bulk_fill_sppd', [$sppdA, $sppdB], data: [
+                'origin_location' => 'Jakarta',
+                'destination_location' => 'Surabaya',
+                'assignment_purpose' => 'Audit Infrastruktur',
+                'departure_date' => '2026-11-25',
+                'departure_time' => '07:30',
+                'return_date' => '2026-11-27',
+                'return_time' => '18:00',
+                'total_days' => 3,
+                'travel_category' => 'Dalam Negeri',
+                'general_travel_type' => 'Sementara',
+                'special_travel_type' => 'Lainnya',
+                'transport_departure' => 'Ditanggung Perusahaan',
+                'transport_arrival' => 'Ditanggung Perusahaan',
+                'transportation_mode' => 'Kereta Api',
+                'destination_transportation' => ['Sewa Kendaraan'],
+            ])
+            ->assertHasNoTableBulkActionErrors();
+
+        $this->assertSame('pending', $sppdA->fresh()->status);
+        $this->assertSame('pending', $sppdB->fresh()->status);
+        $this->assertSame('Kereta Api', $sppdA->fresh()->transportation_mode);
+        $this->assertSame('Kereta Api', $sppdB->fresh()->transportation_mode);
+        $this->assertSame('draft', $sppdC->fresh()->status);
+    }
+
+    public function test_manager_bulk_approves_sppds_and_assigned_employee_signs_with_signature_guard(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+        \App\Models\SppdSetting::current()->update(['form_filler_role' => 'HR']);
+
+        $org = Organization::create(['name' => 'PT Motiva', 'code' => 'MTV']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Jakarta', 'code' => 'JKT']);
+        $mgrPos = Position::create(['name' => 'Manager', 'code' => 'MGR', 'level' => 1]);
+        $stfPos = Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $dummyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+        $mgrUser = User::factory()->create([
+            'name' => 'M Nuramzan Iftari',
+            'signature_type' => 'draw',
+            'signature_data' => $dummyPng,
+        ]);
+        $mgrUser->assignRole('Manager');
+        $mgrEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+            'user_id' => $mgrUser->id,
+            'name' => 'M Nuramzan Iftari',
+            'identity_number' => 'MGR-BULK',
+        ]);
+
+        $spvPos = Position::create(['name' => 'Supervisor', 'code' => 'SPV', 'level' => 2]);
+        $spvUser = User::factory()->create([
+            'name' => 'Ikhsan Supervisor',
+            'signature_type' => 'draw',
+            'signature_data' => $dummyPng,
+        ]);
+        $spvUser->assignRole('Supervisor');
+        $spvEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $spvPos->id,
+            'user_id' => $spvUser->id,
+            'manager_id' => $mgrEmp->id,
+            'name' => 'Ikhsan Supervisor',
+            'identity_number' => 'SPV-BULK',
+        ]);
+
+        // Staff WITHOUT signature initially
+        $staffUser = User::factory()->create(['name' => 'Pegawai Penugasan']);
+        $staffUser->assignRole('Staff');
+        $staffEmp1 = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $stfPos->id,
+            'user_id' => $staffUser->id,
+            'manager_id' => $spvEmp->id,
+            'name' => 'Pegawai Penugasan',
+            'identity_number' => 'STF-BULK-1',
+        ]);
+        $staffEmp2 = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $stfPos->id,
+            'manager_id' => $spvEmp->id,
+            'name' => 'Pegawai Penugasan 2',
+            'identity_number' => 'STF-BULK-2',
+        ]);
+
+        $hrUser = User::factory()->create([
+            'name' => 'HR Admin',
+            'signature_type' => 'draw',
+            'signature_data' => $dummyPng,
+        ]);
+        $hrUser->assignRole('HR');
+
+        $trip = BusinessTrip::create([
+            'activity_name' => 'Dinas Massal',
+            'destination' => 'Semarang',
+            'start_date' => '2026-11-28',
+            'end_date' => '2026-11-29',
+        ]);
+        $sppd1 = Sppd::create(['business_trip_id' => $trip->id, 'employee_id' => $staffEmp1->id, 'status' => 'draft']);
+        $sppd2 = Sppd::create(['business_trip_id' => $trip->id, 'employee_id' => $staffEmp2->id, 'status' => 'draft']);
+
+        // 1. HR submits SPPD1 + SPPD2 without employee requester signature and without confirmation modal
+        $this->actingAs($hrUser);
+        Livewire::test(EditSppd::class, ['record' => $sppd1->getKey()])
+            ->assertDontSee('Konfirmasi Persetujuan Perhitungan Biaya SPPD')
+            ->fillForm([
+                'origin_location' => 'Jakarta',
+                'destination_location' => 'Semarang',
+                'assignment_purpose' => 'Audit Semarang',
+                'departure_date' => '2026-11-28',
+                'departure_time' => '08:00',
+                'return_date' => '2026-11-29',
+                'return_time' => '17:00',
+                'total_days' => 2,
+                'travel_category' => 'Dalam Negeri',
+                'general_travel_type' => 'Sementara',
+                'special_travel_type' => 'Lainnya',
+                'transport_departure' => 'Ditanggung Perusahaan',
+                'transport_arrival' => 'Ditanggung Perusahaan',
+                'transportation_mode' => 'Kereta Api',
+                'destination_transportation' => ['Kendaraan Dinas/Operasional'],
+                'apply_to_sibling_sppd_ids' => [$sppd2->id],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertDatabaseMissing('document_signatures', [
+            'document_type' => Sppd::class,
+            'document_id' => $sppd1->id,
+            'role_type' => 'requester',
+        ]);
+
+        $req1 = \App\Models\ApprovalRequest::where('document_type', Sppd::class)->where('document_id', $sppd1->id)->firstOrFail();
+        $req2 = \App\Models\ApprovalRequest::where('document_type', Sppd::class)->where('document_id', $sppd2->id)->firstOrFail();
+
+        // 2. Supervisor bulk-approves Step 1, then verify Supervisor sees 0 pending & 2 approved while Manager still sees 2 pending
+        $this->actingAs($spvUser);
+        Livewire::test(\App\Filament\Admin\Resources\SppdApprovalResource\Pages\ListSppdApprovals::class)
+            ->callTableBulkAction('bulk_approve', [$req1, $req2], data: ['notes' => 'Disetujui Supervisor'])
+            ->assertHasNoTableBulkActionErrors();
+
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdApprovalResource::canUserActOnApproval($req1->fresh(), $spvUser));
+        Livewire::test(\App\Filament\Admin\Resources\SppdApprovalResource\Pages\ListSppdApprovals::class)
+            ->assertCanNotSeeTableRecords([$req1, $req2]);
+        Livewire::test(\App\Filament\Admin\Widgets\SppdOverviewWidget::class)
+            ->assertSee('Semua SPPD telah ditinjau');
+        Livewire::test(\App\Filament\Admin\Widgets\ExecutiveOverviewWidget::class)
+            ->assertSee('Seluruh SPPD telah diverifikasi');
+
+        $this->actingAs($mgrUser);
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdApprovalResource::canUserActOnApproval($req1->fresh(), $mgrUser));
+        Livewire::test(\App\Filament\Admin\Resources\SppdApprovalResource\Pages\ListSppdApprovals::class)
+            ->callTableBulkAction('bulk_approve', [$req1, $req2], data: ['notes' => 'Disetujui Manajer'])
+            ->assertHasNoTableBulkActionErrors();
+
+        $this->assertSame('approved', $sppd1->fresh()->status);
+        $this->assertSame('approved', $sppd2->fresh()->status);
+        $this->assertDatabaseHas('document_signatures', [
+            'document_type' => Sppd::class,
+            'document_id' => $sppd1->id,
+            'role_type' => 'manager',
+        ]);
+
+        // 3. Assigned employee without signature is warned/blocked when trying to approve & sign
+        $sppd1->refresh();
+        $this->actingAs($staffUser);
+        Livewire::test(\App\Filament\Admin\Resources\SppdResource\Pages\ListSppds::class)
+            ->assertTableActionVisible('employee_approve', $sppd1)
+            ->callTableAction('employee_approve', $sppd1)
+            ->assertNotified('Tanda Tangan Belum Diatur');
+
+        $this->assertDatabaseMissing('document_signatures', [
+            'document_type' => Sppd::class,
+            'document_id' => $sppd1->id,
+            'role_type' => 'requester',
+        ]);
+
+        // 4. After configuring signature, assigned employee approves & signs SPPD -> signature stamped
+        $staffUser->update(['signature_type' => 'draw', 'signature_data' => $dummyPng]);
+        Livewire::test(\App\Filament\Admin\Resources\SppdResource\Pages\ListSppds::class)
+            ->callTableAction('employee_approve', $sppd1)
+            ->assertNotified('SPPD Disetujui & Ditandatangani')
+            ->assertTableActionHidden('employee_approve', $sppd1);
+
+        $this->assertDatabaseHas('document_signatures', [
+            'document_type' => Sppd::class,
+            'document_id' => $sppd1->id,
+            'user_id' => $staffUser->id,
+            'role_type' => 'requester',
+        ]);
+
+        $this->get(route('sppds.print', $sppd1))
+            ->assertSuccessful()
+            ->assertHeader('Content-Type', 'application/pdf');
+    }
 }
