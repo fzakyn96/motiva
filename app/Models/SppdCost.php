@@ -98,6 +98,12 @@ class SppdCost extends Model
         'total_cost',
         'status',
         'notes',
+
+        // Evidence / Bukti Foto atau PDF
+        'transport_evidence',
+        'per_diem_evidence',
+        'other_evidence',
+        'general_evidence',
     ];
 
     protected function casts(): array
@@ -149,6 +155,10 @@ class SppdCost extends Model
             'subtotal_other' => 'decimal:2',
 
             'total_cost' => 'decimal:2',
+            'transport_evidence' => 'array',
+            'per_diem_evidence' => 'array',
+            'other_evidence' => 'array',
+            'general_evidence' => 'array',
         ];
     }
 

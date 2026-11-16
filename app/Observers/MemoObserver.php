@@ -39,19 +39,40 @@ class MemoObserver
             $memo->title = $memo->agenda ?? '-';
         }
 
-        // Generate nomor_memo
+        // Hanya generate nomor_memo jika memo langsung dibuat dengan status approved (misal seeder)
+        if ($memo->status === 'approved' && empty($memo->nomor_memo)) {
+            $memo->nomor_memo = $this->generateNomorMemo($memo);
+        }
+    }
+
+    /**
+     * Handle the Memo "updating" event.
+     */
+    public function updating(Memo $memo): void
+    {
+        if ($memo->status === 'approved' && empty($memo->nomor_memo)) {
+            $memo->nomor_memo = $this->generateNomorMemo($memo);
+        }
+    }
+
+    protected function generateNomorMemo(Memo $memo): string
+    {
         $year = date('Y');
         $month = date('m');
-        
-        // Try to get department code
+
         $dept = \App\Models\Department::find($memo->department_id);
         $deptCode = $dept ? ($dept->code ?? 'GEN') : 'GEN';
-        
-        // Count memos created this year to determine the sequence number
-        $count = Memo::whereYear('created_at', $year)->count();
-        $nextSeq = str_pad($count + 1, 4, '0', STR_PAD_LEFT);
-        
-        $memo->nomor_memo = "{$nextSeq}/MEMO/{$deptCode}/{$month}/{$year}";
+
+        $count = Memo::whereYear('created_at', $year)->whereNotNull('nomor_memo')->count();
+        $seq = $count + 1;
+
+        do {
+            $nextSeq = str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+            $candidate = "{$nextSeq}/MEMO/{$deptCode}/{$month}/{$year}";
+            $seq++;
+        } while (Memo::where('nomor_memo', $candidate)->exists());
+
+        return $candidate;
     }
 
     /**
@@ -159,15 +180,6 @@ class MemoObserver
                 ->first();
 
             if (! $existing) {
-                $deptCode = $employee->department?->code ?? ($memo->department?->code ?? 'GEN');
-                $count = \App\Models\Sppd::whereYear('created_at', $year)->count();
-                $seq = str_pad($count + 1, 4, '0', STR_PAD_LEFT);
-                $sppdNumber = "{$seq}/SPPD/{$deptCode}/{$month}/{$year}";
-
-                if (\App\Models\Sppd::where('sppd_number', $sppdNumber)->exists()) {
-                    $sppdNumber = "{$seq}/SPPD/{$deptCode}/{$month}/{$year}-" . $employee->id;
-                }
-
                 $startDate = $memo->assignment_start_date;
                 $endDate = $memo->assignment_end_date ?? $memo->assignment_start_date;
                 $totalDays = null;
@@ -180,7 +192,7 @@ class MemoObserver
                 \App\Models\Sppd::create([
                     'business_trip_id' => $trip->id,
                     'employee_id' => $employee->id,
-                    'sppd_number' => $sppdNumber,
+                    'sppd_number' => null,
                     'status' => 'draft',
                     'departure_date' => $startDate,
                     'departure_time' => '08:00',
@@ -190,13 +202,6 @@ class MemoObserver
                     'origin_location' => $employee->area ?? 'Jakarta',
                     'destination_location' => $memo->location,
                     'assignment_purpose' => $memo->agenda ?? $memo->title,
-                    'travel_category' => 'Dalam Negeri',
-                    'general_travel_type' => 'Kunjungan Dinas Umum/Rapat Dinas/Dinas Survei *)',
-                    'special_travel_type' => '≥ 80km dan menginap',
-                    'transport_departure' => 'Sendiri',
-                    'transport_arrival' => 'Kendaraan Dinas/Operasional',
-                    'transportation_mode' => 'KA',
-                    'destination_transportation' => ['Penugasan = Penginapan', 'Kendaraan Dinas/Operasional'],
                 ]);
             }
         }

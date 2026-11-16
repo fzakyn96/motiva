@@ -276,7 +276,7 @@ class SppdCostResource extends Resource
                 ]),
 
             // 2. JENIS BIAYA (HARIAN)
-            Forms\Components\Section::make('2. Jenis Biaya (Biaya Harian Dinas / Per Diem)')
+            Forms\Components\Section::make('2. Jenis Biaya (Biaya Harian Dinas)')
                 ->icon('heroicon-o-calendar-days')
                 ->iconColor('primary')
                 ->description('Rincian biaya penginapan, uang makan, uang saku, dan angkutan setempat.')
@@ -500,13 +500,13 @@ class SppdCostResource extends Resource
                 ]),
 
             // 4. RINGKASAN TOTAL
-            Forms\Components\Section::make('Ringkasan Akhir & Total Biaya Disetujui')
+            Forms\Components\Section::make('Ringkasan Akhir & Total Biaya')
                 ->icon('heroicon-o-check-badge')
                 ->iconColor('success')
-                ->description('Total keseluruhan biaya perjalanan dinas (Transport + Biaya Harian + Biaya Lain) serta catatan HR.')
+                ->description('Total keseluruhan biaya perjalanan dinas (Transport + Biaya Harian + Biaya Lain) serta catatan tambahan.')
                 ->schema([
                     Forms\Components\TextInput::make('total_cost')
-                        ->label('Total Biaya SPPD Disetujui')
+                        ->label('Total Biaya')
                         ->prefixIcon('heroicon-m-banknotes')
                         ->numeric()
                         ->prefix('Rp')
@@ -515,12 +515,42 @@ class SppdCostResource extends Resource
                         ->required()
                         ->extraAttributes(['class' => 'text-lg font-bold text-success-600 dark:text-success-400']),
                     Forms\Components\Textarea::make('notes')
-                        ->label('Catatan Tambahan HR')
+                        ->label('Catatan Tambahan')
                         ->placeholder('Tambahkan catatan atau keterangan khusus perhitungan ini...')
                         ->rows(3),
+                    static::evidenceUpload(
+                        'general_evidence',
+                        'Bukti / Evidence Biaya SPPD (Foto atau PDF)',
+                        'sppd-cost-evidences/general',
+                        'total_cost',
+                        'Bukti / evidence Biaya SPPD (foto/PDF) wajib diunggah jika total biaya lebih dari Rp 0.'
+                    )->columnSpanFull(),
                 ])
                 ->columns(['default' => 1, 'md' => 2]),
         ];
+    }
+
+    protected static function evidenceUpload(
+        string $field,
+        string $label,
+        string $directory,
+        string $amountField,
+        string $requiredMessage
+    ): Forms\Components\FileUpload {
+        return Forms\Components\FileUpload::make($field)
+            ->label($label)
+            ->multiple()
+            ->disk('public')
+            ->directory($directory)
+            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+            ->maxSize(5120)
+            ->openable()
+            ->downloadable()
+            ->helperText('Unggah foto (JPG/PNG) atau file PDF maksimal 5 MB per file. Wajib diisi apabila nominal komponen > Rp 0.')
+            ->required(fn (Forms\Get $get): bool => (float) ($get($amountField) ?? 0) > 0)
+            ->validationMessages([
+                'required' => $requiredMessage,
+            ]);
     }
 
     public static function form(Form $form): Form
@@ -596,6 +626,7 @@ class SppdCostResource extends Resource
             ])
             ->defaultSort('id', 'desc')
             ->filters([
+                \App\Filament\Admin\Support\RecapTableSupport::monthYearFilter('departure_date'),
                 Tables\Filters\SelectFilter::make('base_type')
                     ->label('Kategori Tarif')
                     ->options(fn () => \App\Models\SppdRateStandard::getCategoryNames())

@@ -128,6 +128,12 @@ class ExecutiveDashboardTest extends TestCase
 
     public function test_staff_can_render_personal_dashboard_and_widgets(): void
     {
+        $this->staffUser->update([
+            'signature_type' => 'draw',
+            'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            'signature_updated_at' => now(),
+        ]);
+
         $this->actingAs($this->staffUser);
 
         Livewire::test(Dashboard::class)
@@ -139,10 +145,12 @@ class ExecutiveDashboardTest extends TestCase
 
         Livewire::test(StaffOverviewWidget::class)
             ->assertSuccessful()
-            ->assertSee('Memo Penugasan Saya')
-            ->assertSee('SPPD Saya')
-            ->assertSee('Klaim Reimbursement Saya')
-            ->assertSee('Tanda Tangan Digital');
+            ->assertDontSee('Memo Penugasan Saya')
+            ->assertSee('Total SPPD Saya')
+            ->assertSee('SPPD Disetujui')
+            ->assertDontSee('Klaim Reimbursement Saya')
+            ->assertSee('Tanda Tangan Digital')
+            ->assertSee('Metode: Gambar Langsung');
 
         Livewire::test(StaffRecentTripsWidget::class)
             ->assertSuccessful();

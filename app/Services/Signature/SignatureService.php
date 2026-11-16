@@ -140,9 +140,10 @@ class SignatureService
             ->latest('signed_at')
             ->first();
 
-        if (! $docSig) {
+        if (! $docSig && in_array($roleType, ['manager', 'approver'], true)) {
             $docSig = DocumentSignature::where('document_type', get_class($document))
                 ->where('document_id', $document->getKey())
+                ->whereIn('role_type', ['manager', 'approver'])
                 ->latest('signed_at')
                 ->first();
         }
@@ -202,6 +203,15 @@ class SignatureService
         }
         if ($document instanceof SppdCost) {
             return $document->sppd?->sppd_number ?: ('COST-' . $document->id);
+        }
+        if ($document instanceof \App\Models\BusinessTrip) {
+            return $document->memo?->nomor_memo ?: ('REKAP-' . $document->id);
+        }
+        if ($document instanceof \App\Models\TransportAccommodationRecap) {
+            return $document->recap_number ?: ('REKAP-TA-' . $document->id);
+        }
+        if ($document instanceof \App\Models\OfficialTravelRecap) {
+            return $document->recap_number ?: ('REKAP-PD-' . $document->id);
         }
 
         return (string) $document->getKey();

@@ -13,12 +13,32 @@ use App\Services\Approval\Resolvers\SupervisorAuthorityResolver;
 class SppdObserver
 {
     /**
+     * Handle the Sppd "creating" event.
+     */
+    public function creating(Sppd $sppd): void
+    {
+        if ($sppd->status === 'approved' && empty($sppd->sppd_number)) {
+            $sppd->sppd_number = $this->generateSppdNumber($sppd);
+        }
+    }
+
+    /**
      * Handle the Sppd "created" event.
      */
     public function created(Sppd $sppd): void
     {
         if ($sppd->status === 'pending') {
             $this->ensureApprovalRequestExists($sppd);
+        }
+    }
+
+    /**
+     * Handle the Sppd "updating" event.
+     */
+    public function updating(Sppd $sppd): void
+    {
+        if ($sppd->status === 'approved' && empty($sppd->sppd_number)) {
+            $sppd->sppd_number = $this->generateSppdNumber($sppd);
         }
     }
 
@@ -30,6 +50,28 @@ class SppdObserver
         if ($sppd->isDirty('status') && $sppd->status === 'pending') {
             $this->ensureApprovalRequestExists($sppd);
         }
+    }
+
+    protected function generateSppdNumber(Sppd $sppd): string
+    {
+        $year = date('Y');
+        $month = date('m');
+
+        $employee = $sppd->employee ?? \App\Models\Employee::with('department')->find($sppd->employee_id);
+        $deptCode = $employee?->department?->code
+            ?? $sppd->businessTrip?->memo?->department?->code
+            ?? 'GEN';
+
+        $count = Sppd::whereYear('created_at', $year)->whereNotNull('sppd_number')->count();
+        $seq = $count + 1;
+
+        do {
+            $nextSeq = str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+            $candidate = "{$nextSeq}/SPPD/{$deptCode}/{$month}/{$year}";
+            $seq++;
+        } while (Sppd::where('sppd_number', $candidate)->exists());
+
+        return $candidate;
     }
 
     /**

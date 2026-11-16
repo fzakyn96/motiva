@@ -2,7 +2,6 @@
 
 namespace App\Filament\Admin\Widgets;
 
-use App\Filament\Admin\Resources\ReimbursementResource;
 use App\Filament\Admin\Resources\SppdResource;
 use App\Models\Sppd;
 use Carbon\Carbon;
@@ -104,15 +103,6 @@ class StaffRecentTripsWidget extends BaseWidget
                     ->visible(fn (Sppd $record) => $record->status === 'draft')
                     ->url(fn (Sppd $record) => SppdResource::getUrl('edit', ['record' => $record])),
 
-                Tables\Actions\Action::make('create_reimb')
-                    ->label('Klaim Reimbursement')
-                    ->icon('heroicon-o-receipt-percent')
-                    ->button()
-                    ->size('sm')
-                    ->color('primary')
-                    ->visible(fn (Sppd $record) => $record->status === 'approved')
-                    ->url(fn () => ReimbursementResource::getUrl('create')),
-
                 Tables\Actions\Action::make('print_sppd')
                     ->label('Cetak')
                     ->icon('heroicon-o-printer')
@@ -132,7 +122,7 @@ class StaffRecentTripsWidget extends BaseWidget
                     ->url(fn (Sppd $record) => SppdResource::getUrl('review', ['record' => $record])),
             ])
             ->emptyStateHeading('Belum Ada Penugasan SPPD')
-            ->emptyStateDescription('Anda dapat membuat Memo Dinas terlebih dahulu untuk memulai penugasan perjalanan dinas.')
+            ->emptyStateDescription('Belum ada dokumen Surat Perintah Perjalanan Dinas (SPPD) yang diterbitkan untuk Anda.')
             ->emptyStateIcon('heroicon-o-paper-airplane')
             ->paginated([5, 10]);
     }

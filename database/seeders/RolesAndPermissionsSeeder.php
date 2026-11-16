@@ -122,6 +122,7 @@ class RolesAndPermissionsSeeder extends Seeder
         // Create roles (keep order consistent with live database)
         $roles = [
             'Superadmin',
+            'Division Head',
             'Manager',
             'Supervisor',
             'HR',
@@ -138,37 +139,42 @@ class RolesAndPermissionsSeeder extends Seeder
         $roleInstances['Superadmin']->syncPermissions($allPermissions);
         $roleInstances['Admin']->syncPermissions($allPermissions);
 
-        // Assign Memo & SPPD permissions to Manager, Supervisor
-        foreach (['Manager', 'Supervisor'] as $roleName) {
+        // Assign Memo & SPPD permissions to Division Head, Manager, Supervisor
+        foreach (['Division Head', 'Manager', 'Supervisor'] as $roleName) {
             $roleInstances[$roleName]->givePermissionTo($memoPermissions);
             $roleInstances[$roleName]->givePermissionTo($sppdPermissions);
         }
 
-        // Sync HR permissions (Memo, SPPD, Biaya SPPD, Tarif Standar SPPD, Reimbursement, Data Pegawai/Unit/Jabatan - TANPA Hak Akses & Pengguna)
+        // Sync HR permissions (Memo + Hapus Memo, SPPD tanpa Hapus SPPD, Biaya SPPD, Tarif Standar SPPD, Reimbursement, Data Pegawai/Unit/Jabatan - TANPA Hak Akses & Pengguna & TANPA Log Memo)
+        $hrSppdPermissions = [
+            'view_any_sppd',
+            'view_sppd',
+            'create_sppd',
+            'update_sppd',
+        ];
+
         $roleInstances['HR']->syncPermissions(array_merge(
             $memoPermissions,
-            $sppdPermissions,
+            $hrSppdPermissions,
             $costPermissions,
             $rateStandardPermissions,
             $reimbursementPermissions,
             $employeeMasterPermissions
         ));
 
-        // Assign Reimbursement permissions to Manager, Supervisor, Staff
+        // Assign Reimbursement permissions to Division Head, Manager, Supervisor, Staff
+        $roleInstances['Division Head']->givePermissionTo($reimbursementPermissions);
         $roleInstances['Manager']->givePermissionTo($reimbursementPermissions);
         $roleInstances['Supervisor']->givePermissionTo($reimbursementPermissions);
-        $roleInstances['Staff']->givePermissionTo([
-            'view_any_memo',
-            'view_memo',
-            'create_memo',
-            'update_memo',
+        $roleInstances['Staff']->syncPermissions([
             'view_any_sppd',
             'view_sppd',
-            'create_sppd',
+            'update_sppd',
             'view_any_reimbursement',
             'view_reimbursement',
             'create_reimbursement',
             'update_reimbursement',
+            'delete_reimbursement',
         ]);
 
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();

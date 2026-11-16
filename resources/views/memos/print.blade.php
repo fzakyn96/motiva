@@ -82,6 +82,13 @@
     </table>
 
     <div class="title">MEMO</div>
+    <div style="text-align: left; font-size: 13px; font-weight: bold; margin-top: -14px; margin-bottom: 18px;">
+        @if($memo->nomor_memo)
+            {{ $memo->nomor_memo }}
+        @else
+            <span style="font-weight: normal; font-style: italic; color: #555;">Nomor dokumen belum terbit</span>
+        @endif
+    </div>
 
     <div class="content">
         <p>Jakarta, {{ \Carbon\Carbon::parse($memo->date)->locale('id')->translatedFormat('d F Y') }}</p>

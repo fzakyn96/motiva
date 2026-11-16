@@ -82,8 +82,9 @@ class DomainSppdTest extends TestCase
         ]);
 
         \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+        \App\Models\SppdSetting::current()->update(['form_filler_role' => 'Staff']);
 
-        // Staff opens edit page: verify auto-filled fields, back action, and hidden print button
+        // Staff opens edit page: verify factual fields are auto-filled, decision/choice fields start empty, back action, and hidden print button
         $test = Livewire::actingAs($staffUser)
             ->test(EditSppd::class, ['record' => $sppd->getKey()])
             ->assertActionExists('back')
@@ -95,6 +96,16 @@ class DomainSppdTest extends TestCase
                 'departure_date' => fn ($state) => str_starts_with($state, '2026-04-06'),
                 'return_date' => fn ($state) => str_starts_with($state, '2026-04-10'),
                 'total_days' => 5,
+                'travel_grade' => null,
+                'departure_time' => '08:00',
+                'return_time' => '17:00',
+                'travel_category' => null,
+                'general_travel_type' => null,
+                'special_travel_type' => null,
+                'transport_departure' => null,
+                'transport_arrival' => null,
+                'transportation_mode' => null,
+                'destination_transportation' => [],
             ])
             ->fillForm([
                 'travel_grade' => 'Golongan II',
@@ -122,9 +133,10 @@ class DomainSppdTest extends TestCase
         $this->assertEquals('KA', $sppd->transportation_mode);
         $this->assertContains('Penugasan = Penginapan', $sppd->destination_transportation);
 
-        // Now print action should be visible since status is pending
+        // Once submitted (status is pending), Staff can no longer edit SPPD, only view and print via ReviewSppd
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdResource::canEdit($sppd));
         Livewire::actingAs($staffUser)
-            ->test(EditSppd::class, ['record' => $sppd->getKey()])
+            ->test(\App\Filament\Admin\Resources\SppdResource\Pages\ReviewSppd::class, ['record' => $sppd->getKey()])
             ->assertActionVisible('print');
     }
 
@@ -562,5 +574,388 @@ class DomainSppdTest extends TestCase
             ->assertSeeHtml('Disetujui')
             ->assertSeeHtml('Ditolak')
             ->assertSeeHtml('Total Pengajuan');
+    }
+
+    public function test_staff_and_hr_sppd_permissions_follow_strict_status_and_delete_rules(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        $org = Organization::create(['name' => 'PT Motiva', 'code' => 'MTV']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Jakarta', 'code' => 'JKT']);
+        $pos = Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $staffUser = User::factory()->create(['name' => 'Staff SPPD']);
+        $staffUser->assignRole('Staff');
+        $staffEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'user_id' => $staffUser->id,
+            'name' => 'Staff SPPD',
+            'identity_number' => 'STF-SPPD-99',
+        ]);
+
+        $hrUser = User::factory()->create(['name' => 'HR SPPD']);
+        $hrUser->assignRole('HR');
+        Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'user_id' => $hrUser->id,
+            'name' => 'HR SPPD',
+            'identity_number' => 'HR-SPPD-99',
+        ]);
+
+        $trip = BusinessTrip::create([
+            'activity_name' => 'Dinas Uji Akses SPPD',
+            'destination' => 'Yogyakarta',
+            'start_date' => '2026-11-10',
+            'end_date' => '2026-11-12',
+        ]);
+
+        $sppd = Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $staffEmp->id,
+            'sppd_number' => '099/SPPD/JKT/11/2026',
+            'status' => 'draft',
+        ]);
+
+        // 1. Default setting (HR): Staff hanya bisa melihat draft SPPD, tidak bisa mengedit sampai diatur ke Staff
+        $this->actingAs($staffUser);
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdResource::canView($sppd));
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdResource::canEdit($sppd));
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdResource::canDelete($sppd));
+
+        // Saat pengaturan diubah ke Staff: Staff bisa mengedit SPPD draft
+        \App\Models\SppdSetting::current()->update(['form_filler_role' => 'Staff']);
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdResource::canEdit($sppd));
+
+        // 2. Saat status sudah disetujui (approved): Staff HANYA bisa melihat dan mencetak SPPD (tidak bisa edit & tidak bisa hapus)
+        $sppd->update([
+            'status' => 'approved',
+            'sppd_number' => '099/SPPD/JKT/11/2026',
+        ]);
+
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdResource::canView($sppd));
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdResource::canEdit($sppd));
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdResource::canDelete($sppd));
+        $this->get(route('sppds.print', $sppd))->assertSuccessful();
+
+        // 3. HR tidak boleh menghapus SPPD, hanya boleh mengedit, melihat, dan mencetak SPPD
+        $this->actingAs($hrUser);
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdResource::canView($sppd));
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdResource::canEdit($sppd));
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdResource::canDelete($sppd));
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdResource::canDeleteAny());
+        $this->get(route('sppds.print', $sppd))->assertSuccessful();
+    }
+
+    public function test_sppd_print_and_cost_print_resolve_authorizing_manager_not_hr_or_supervisor(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+
+        $org = Organization::create(['name' => 'PT Permata Karya Jasa', 'code' => 'PKJ']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Operasional', 'code' => 'OPR']);
+        $mgrPos = Position::create(['name' => 'Manajer Operasional', 'code' => 'MGR', 'level' => 2]);
+        $spvPos = Position::create(['name' => 'Supervisor Operasional', 'code' => 'SPV', 'level' => 3]);
+        $hrPos = Position::create(['name' => 'HR Officer', 'code' => 'HR', 'level' => 3]);
+        $stfPos = Position::create(['name' => 'Staff Lapangan', 'code' => 'STF', 'level' => 4]);
+
+        $managerUser = User::factory()->create(['name' => 'Manager Operasi']);
+        $managerUser->assignRole('Manager');
+        $manager = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+            'user_id' => $managerUser->id,
+            'name' => 'Manager Operasi',
+            'identity_number' => 'EMP-MGR-01',
+        ]);
+
+        $supervisorUser = User::factory()->create(['name' => 'Supervisor Operasi']);
+        $supervisorUser->assignRole('Supervisor');
+        $supervisor = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $spvPos->id,
+            'user_id' => $supervisorUser->id,
+            'manager_id' => $manager->id,
+            'name' => 'Supervisor Operasi',
+            'identity_number' => 'EMP-SPV-01',
+        ]);
+
+        $hrUser = User::factory()->create(['name' => 'HR Officer']);
+        $hrUser->assignRole('HR');
+        $hr = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $hrPos->id,
+            'user_id' => $hrUser->id,
+            'manager_id' => $manager->id,
+            'name' => 'HR Officer',
+            'identity_number' => 'EMP-HR-01',
+        ]);
+
+        $staffUser = User::factory()->create(['name' => 'Staff Lapangan']);
+        $staffUser->assignRole('Staff');
+        $staff = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $stfPos->id,
+            'user_id' => $staffUser->id,
+            'manager_id' => $supervisor->id,
+            'name' => 'Staff Lapangan',
+            'identity_number' => 'EMP-STF-01',
+        ]);
+
+        $trip = BusinessTrip::create([
+            'activity_name' => 'Audit Cabang',
+            'destination' => 'Bandung',
+            'start_date' => '2026-11-15',
+            'end_date' => '2026-11-17',
+        ]);
+
+        $memo = Memo::create([
+            'nomor_memo' => 'MEMO/MGR/001',
+            'title' => 'Penugasan Luar Kota',
+            'content' => 'Isi memo',
+            'department_id' => $dept->id,
+            'creator_employee_id' => $hr->id,
+            'date' => now()->toDateString(),
+            'status' => 'approved',
+        ]);
+
+        $sppd = Sppd::create([
+            'sppd_number' => 'SPPD/MGR/001',
+            'memo_id' => $memo->id,
+            'business_trip_id' => $trip->id,
+            'employee_id' => $staff->id,
+            'status' => 'approved',
+            'total_days' => 3,
+        ]);
+
+        $cost = new \App\Models\SppdCost([
+            'sppd_id' => $sppd->id,
+            'creator_id' => $hrUser->id,
+            'base_type' => 'office_base_stay',
+            'official_days' => 3,
+            'meal_qty' => 3,
+            'meal_rate' => 100000,
+        ]);
+        $cost->recalculateTotals();
+        $cost->save();
+
+        $resolved = $sppd->resolveAuthorizingManager();
+        $this->assertNotNull($resolved);
+        $this->assertSame($manager->id, $resolved->id);
+
+        $this->actingAs($staffUser);
+        $this->get(route('sppds.print', $sppd))
+            ->assertSuccessful()
+            ->assertHeader('Content-Type', 'application/pdf');
+
+        $this->get(route('sppd-costs.print', $cost))
+            ->assertSuccessful()
+            ->assertHeader('Content-Type', 'application/pdf');
+    }
+
+    public function test_staff_saving_draft_sppd_requires_cost_agreement_confirmation_and_signs_requester_slot(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        $org = Organization::create(['name' => 'PT Permata Karya Jasa', 'code' => 'PKJ']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Keuangan', 'code' => 'KEU']);
+        $mgrPos = Position::create(['name' => 'Manajer Keuangan', 'code' => 'MGR-K', 'level' => 2]);
+        $stfPos = Position::create(['name' => 'Staff Keuangan', 'code' => 'STF-K', 'level' => 4]);
+
+        $managerUser = User::factory()->create(['name' => 'Manager Keuangan']);
+        $managerUser->assignRole('Manager');
+        $manager = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+            'user_id' => $managerUser->id,
+            'name' => 'Manager Keuangan',
+            'identity_number' => 'EMP-MGR-02',
+        ]);
+
+        $staffUser = User::factory()->create([
+            'name' => 'Staff Keuangan',
+            'signature_type' => 'draw',
+            'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        ]);
+        $staffUser->assignRole('Staff');
+        $staff = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $stfPos->id,
+            'user_id' => $staffUser->id,
+            'manager_id' => $manager->id,
+            'name' => 'Staff Keuangan',
+            'identity_number' => 'EMP-STF-02',
+        ]);
+
+        $trip = BusinessTrip::create([
+            'activity_name' => 'Rapat Anggaran',
+            'destination' => 'Surabaya',
+            'start_date' => '2026-11-20',
+            'end_date' => '2026-11-21',
+        ]);
+
+        $sppd = Sppd::create([
+            'sppd_number' => 'SPPD/KEU/001',
+            'business_trip_id' => $trip->id,
+            'employee_id' => $staff->id,
+            'status' => 'draft',
+            'total_days' => 2,
+        ]);
+
+        $cost = new \App\Models\SppdCost([
+            'sppd_id' => $sppd->id,
+            'creator_id' => $managerUser->id,
+            'base_type' => 'office_base_stay',
+            'official_days' => 2,
+            'meal_qty' => 2,
+            'meal_rate' => 100000,
+        ]);
+        $cost->recalculateTotals();
+        $cost->save();
+
+        \App\Models\SppdSetting::current()->update(['form_filler_role' => 'Staff']);
+        $this->actingAs($staffUser);
+
+        Livewire::test(\App\Filament\Admin\Resources\SppdResource\Pages\EditSppd::class, [
+            'record' => $sppd->getRouteKey(),
+        ])
+            ->assertActionExists('save')
+            ->fillForm([
+                'travel_grade' => 'Golongan II',
+                'origin_location' => 'Jakarta',
+                'destination_location' => 'Surabaya',
+                'assignment_purpose' => 'Rapat Anggaran',
+                'departure_date' => '2026-11-20',
+                'return_date' => '2026-11-21',
+                'total_days' => 2,
+                'departure_time' => '08:00',
+                'return_time' => '17:00',
+                'travel_category' => 'Dalam Negeri',
+                'general_travel_type' => 'Kunjungan Dinas Umum/Rapat Dinas/Dinas Survei *)',
+                'special_travel_type' => '≥ 80km dan menginap',
+                'transport_departure' => 'Sendiri',
+                'transport_arrival' => 'Kendaraan Dinas/Operasional',
+                'transportation_mode' => 'KA',
+                'destination_transportation' => ['Penugasan = Penginapan', 'Kendaraan Dinas/Operasional'],
+            ])
+            ->callAction('save')
+            ->assertHasNoActionErrors();
+
+        $docSignature = \App\Models\DocumentSignature::where('document_type', Sppd::class)
+            ->where('document_id', $sppd->id)
+            ->where('role_type', 'requester')
+            ->first();
+
+        $this->assertNotNull($docSignature);
+        $this->assertEquals($staffUser->id, $docSignature->user_id);
+
+        $requesterRender = app(\App\Services\Signature\SignatureService::class)
+            ->resolveRenderData($sppd, $staff, 'requester', true);
+        $this->assertTrue($requesterRender['signed'] ?? false);
+
+        $managerRender = app(\App\Services\Signature\SignatureService::class)
+            ->resolveRenderData($sppd, $manager, 'manager', false);
+        $this->assertFalse($managerRender['signed'] ?? false);
+
+        $this->get(route('sppd-costs.print', $cost))
+            ->assertSuccessful()
+            ->assertHeader('Content-Type', 'application/pdf');
+    }
+
+    public function test_sppd_settings_page_defaults_to_hr_and_can_be_configured_by_hr_or_superadmin(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        $this->assertSame('HR', \App\Models\SppdSetting::current()->form_filler_role);
+
+        $hrUser = User::factory()->create();
+        $hrUser->assignRole('HR');
+
+        $staffUser = User::factory()->create();
+        $staffUser->assignRole('Staff');
+
+        $this->actingAs($staffUser);
+        $this->assertFalse(\App\Filament\Admin\Pages\SppdSettingsPage::canAccess());
+
+        $this->actingAs($hrUser);
+        $this->assertTrue(\App\Filament\Admin\Pages\SppdSettingsPage::canAccess());
+
+        Livewire::test(\App\Filament\Admin\Pages\SppdSettingsPage::class)
+            ->assertSuccessful()
+            ->fillForm(['form_filler_role' => 'Staff'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('Staff', \App\Models\SppdSetting::current()->form_filler_role);
+    }
+
+    public function test_sppd_form_validates_points_9_to_15_with_indonesian_messages(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        $org = Organization::create(['name' => 'PT Permata Karya Jasa', 'code' => 'PKJ']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'MESI', 'code' => 'MESI']);
+        $pos = Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $hrUser = User::factory()->create(['name' => 'HR Validasi']);
+        $hrUser->assignRole('HR');
+
+        $staffUser = User::factory()->create(['name' => 'Staff Validasi']);
+        $staffUser->assignRole('Staff');
+        $staff = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'user_id' => $staffUser->id,
+            'name' => 'Staff Validasi',
+            'identity_number' => 'STF-VAL-01',
+        ]);
+
+        $trip = BusinessTrip::create([
+            'activity_name' => 'Uji Validasi SPPD',
+            'destination' => 'Bandung',
+            'start_date' => '2026-11-20',
+            'end_date' => '2026-11-21',
+        ]);
+
+        $sppd = Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $staff->id,
+            'status' => 'draft',
+            'origin_location' => 'Jakarta',
+            'destination_location' => 'Bandung',
+            'assignment_purpose' => 'Uji Validasi',
+            'departure_date' => '2026-11-20',
+            'return_date' => '2026-11-21',
+            'total_days' => 2,
+        ]);
+
+        $this->actingAs($hrUser);
+
+        Livewire::test(EditSppd::class, ['record' => $sppd->getKey()])
+            ->call('save')
+            ->assertHasFormErrors([
+                'travel_category',
+                'general_travel_type',
+                'special_travel_type',
+                'transport_departure',
+                'transport_arrival',
+                'transportation_mode',
+                'destination_transportation',
+            ])
+            ->assertSee('Kategori wilayah perjalanan dinas (poin 9) wajib dipilih.')
+            ->assertDontSee('validation.required');
     }
 }

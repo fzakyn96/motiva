@@ -123,7 +123,7 @@ class SppdRateStandardResource extends Resource
                             ]),
                     ]),
 
-                Forms\Components\Section::make('Komponen Biaya Harian (Per Diem)')
+                Forms\Components\Section::make('Komponen Biaya Harian')
                     ->icon('heroicon-o-banknotes')
                     ->iconColor('success')
                     ->description('Tarif uang makan, uang saku / lumpsum harian, uang angkutan setempat, dan penginapan.')

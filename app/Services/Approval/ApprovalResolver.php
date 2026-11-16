@@ -63,7 +63,13 @@ class ApprovalResolver
             }
 
             if ($request->document && $approver->user && $approver->user->hasConfiguredSignature()) {
-                $roleType = $nextStep ? 'supervisor' : 'manager';
+                $resolverClass = $currentStep->policyStep?->resolver_class;
+                $roleType = match ($resolverClass) {
+                    \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class => 'division_head',
+                    \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class => 'manager',
+                    \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class => 'supervisor',
+                    default => $nextStep ? 'supervisor' : 'manager',
+                };
                 app(\App\Services\Signature\SignatureService::class)->signDocument(
                     $request->document,
                     $approver,

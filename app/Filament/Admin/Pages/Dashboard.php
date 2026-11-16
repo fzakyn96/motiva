@@ -22,11 +22,12 @@ class Dashboard extends BaseDashboard
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
 
-        if ($user && $user->hasAnyRole(['Manager', 'Supervisor', 'Superadmin', 'Admin', 'HR'])) {
-            return 'Executive Command Center • Monitoring Persetujuan, Penugasan SPPD & Realisasi Anggaran Dinas';
-        }
+        // if ($user && $user->hasAnyRole(['Manager', 'Supervisor', 'Superadmin', 'Admin', 'HR'])) {
+        //     return 'Executive Command Center • Monitoring Persetujuan, Penugasan SPPD & Realisasi Anggaran Dinas';
+        // }
 
-        return 'Workspace Perjalanan Dinas • Pantau Memo Penugasan, SPPD, dan Klaim Reimbursement Anda';
+        // return 'Workspace Perjalanan Dinas • Pantau Memo Penugasan, SPPD, dan Klaim Reimbursement Anda';
+        return '';
     }
 
     public function getColumns(): int | string | array

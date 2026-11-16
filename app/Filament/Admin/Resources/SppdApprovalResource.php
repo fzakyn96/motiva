@@ -213,7 +213,7 @@ class SppdApprovalResource extends Resource
                                 ->placeholder('-'),
                             Tables\Columns\TextColumn::make('document.sppd_number')
                                 ->description('Nomor SPPD', position: 'above')
-                                ->placeholder('Belum terbit (Draf)'),
+                                ->placeholder('Nomor dokumen belum terbit'),
                             Tables\Columns\TextColumn::make('status')
                                 ->description('Status Dokumen', position: 'above')
                                 ->badge()
@@ -237,6 +237,7 @@ class SppdApprovalResource extends Resource
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
+                \App\Filament\Admin\Support\RecapTableSupport::monthYearFilter('created_at'),
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status Persetujuan')
                     ->options([

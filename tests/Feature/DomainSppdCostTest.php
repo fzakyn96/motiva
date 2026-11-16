@@ -124,8 +124,9 @@ class DomainSppdCostTest extends TestCase
 
         $this->actingAs($hrUser);
         \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+        \Illuminate\Support\Facades\Storage::fake('public');
 
-        // HR membuka form hitung biaya untuk SPPD yang disetujui
+        // Tanpa evidence untuk komponen bernilai > 0, validasi menolak penyimpanan
         Livewire::test(CalculateSppdCost::class, ['record' => $sppd->id])
             ->assertActionExists('back')
             ->assertSet('data.official_days', 5)
@@ -133,6 +134,14 @@ class DomainSppdCostTest extends TestCase
             ->assertSet('data.pocket_money_rate', 120000)
             ->assertSet('data.local_transit_rate', 75000)
             ->assertSet('data.transport_terminal_rate', 100000)
+            ->call('save')
+            ->assertHasFormErrors(['general_evidence'])
+            ->fillForm([
+                'general_evidence' => [
+                    \Illuminate\Http\UploadedFile::fake()->image('tiket.jpg'),
+                    \Illuminate\Http\UploadedFile::fake()->create('rekap-biaya.pdf', 100, 'application/pdf'),
+                ],
+            ])
             ->call('save')
             ->assertHasNoErrors()
             ->assertRedirect(route('filament.admin.resources.sppd-costs.index'));
@@ -147,6 +156,7 @@ class DomainSppdCostTest extends TestCase
         $sppd->refresh();
         $this->assertNotNull($sppd->cost);
         $this->assertGreaterThan(0, $sppd->cost->total_cost);
+        $this->assertNotEmpty($sppd->cost->general_evidence);
 
         // Setelah disimpan, data di tabel otomatis memiliki status "Sudah Dihitung" dan tombol "Cetak"
         Livewire::test(ListSppdCosts::class)

@@ -50,7 +50,80 @@ class SppdResource extends Resource
             return false;
         }
 
-        return parent::canViewAny();
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Staff']);
+    }
+
+    public static function canCreate(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+    }
+
+    public static function canView(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Manager', 'Supervisor'])) {
+            return true;
+        }
+
+        $employee = $user->employee;
+        if (! $employee) {
+            return false;
+        }
+
+        return (int) $record->employee_id === (int) $employee->id;
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        // HR dan Superadmin boleh mengedit SPPD
+        if ($user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+            return true;
+        }
+
+        $employee = $user->employee;
+        if (! $employee) {
+            return false;
+        }
+
+        // Staff hanya bisa mengedit SPPD miliknya jika status masih draft DAN pengaturan mengizinkan Staff mengisi form SPPD
+        return (int) $record->employee_id === (int) $employee->id
+            && $record->status === 'draft'
+            && \App\Models\SppdSetting::current()->isStaffFiller();
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        // HR dan Staff tidak boleh menghapus SPPD
+        return $user->hasAnyRole(['Superadmin', 'Admin']);
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        return $user->hasAnyRole(['Superadmin', 'Admin']);
     }
 
     public static function getNavigationBadge(): ?string
@@ -170,7 +243,7 @@ class SppdResource extends Resource
                                 Forms\Components\TextInput::make('sppd_number')
                                     ->label('Nomor SPPD')
                                     ->prefixIcon('heroicon-m-hashtag')
-                                    ->placeholder('Diterbitkan otomatis saat diajukan')
+                                    ->placeholder('Nomor dokumen belum terbit')
                                     ->disabled()
                                     ->dehydrated(false),
                             ])
@@ -182,13 +255,19 @@ class SppdResource extends Resource
                                     ->label('6. Tempat Kedudukan (Kota Asal)')
                                     ->prefixIcon('heroicon-m-building-office-2')
                                     ->default(fn (?Sppd $record) => $record?->origin_location ?? ($record?->employee?->area ?? (auth()->user()?->employee?->area ?? 'Jakarta')))
-                                    ->required(),
+                                    ->required()
+                                    ->validationMessages([
+                                        'required' => 'Tempat kedudukan (kota asal) wajib diisi.',
+                                    ]),
                                 Forms\Components\TextInput::make('destination_location')
                                     ->label('7. Lokasi Penugasan (Kota Tujuan)')
                                     ->prefixIcon('heroicon-m-map-pin')
                                     ->placeholder('Contoh: PGN Distribution Pipeline - Area Operasi Lampung')
                                     ->default(fn (?Sppd $record) => $record?->destination_location ?? ($record?->businessTrip?->memo?->location ?? ($record?->businessTrip?->destination ?? '')))
-                                    ->required(),
+                                    ->required()
+                                    ->validationMessages([
+                                        'required' => 'Lokasi penugasan (kota tujuan) wajib diisi.',
+                                    ]),
                                 Forms\Components\Textarea::make('assignment_purpose')
                                     ->label('8. Deskripsi Tujuan Penugasan')
                                     ->helperText('Jabarkan peran, tanggung jawab, dan tugas pada pelaksanaan perjalanan dinas.')
@@ -196,6 +275,9 @@ class SppdResource extends Resource
                                     ->default(fn (?Sppd $record) => $record?->assignment_purpose ?? ($record?->businessTrip?->memo?->agenda ?? ($record?->businessTrip?->memo?->title ?? ($record?->businessTrip?->activity_name ?? ''))))
                                     ->rows(3)
                                     ->required()
+                                    ->validationMessages([
+                                        'required' => 'Deskripsi tujuan penugasan wajib diisi.',
+                                    ])
                                     ->columnSpanFull(),
                             ])
                             ->columns(['default' => 1, 'md' => 2]),
@@ -217,6 +299,9 @@ class SppdResource extends Resource
                             ->closeOnDateSelection()
                             ->default(fn (?Sppd $record) => ($d = $record?->departure_date ?? ($record?->businessTrip?->memo?->assignment_start_date ?? $record?->businessTrip?->start_date)) ? \Carbon\Carbon::parse($d)->format('Y-m-d') : null)
                             ->required()
+                            ->validationMessages([
+                                'required' => 'Tanggal berangkat wajib diisi.',
+                            ])
                             ->live()
                             ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
                                 if ($state && $get('return_date')) {
@@ -232,7 +317,10 @@ class SppdResource extends Resource
                             ->prefixIcon('heroicon-m-clock')
                             ->default(fn (?Sppd $record) => $record?->departure_time ?? '08:00')
                             ->seconds(false)
-                            ->required(),
+                            ->required()
+                            ->validationMessages([
+                                'required' => 'Jam berangkat wajib diisi.',
+                            ]),
                         Forms\Components\DatePicker::make('return_date')
                             ->label('5. Tanggal Kembali')
                             ->prefixIcon('heroicon-m-calendar')
@@ -241,7 +329,12 @@ class SppdResource extends Resource
                             ->format('Y-m-d')
                             ->closeOnDateSelection()
                             ->default(fn (?Sppd $record) => ($d = $record?->return_date ?? ($record?->businessTrip?->memo?->assignment_end_date ?? $record?->businessTrip?->end_date)) ? \Carbon\Carbon::parse($d)->format('Y-m-d') : null)
+                            ->afterOrEqual('departure_date')
                             ->required()
+                            ->validationMessages([
+                                'required' => 'Tanggal kembali wajib diisi.',
+                                'after_or_equal' => 'Tanggal kembali tidak boleh lebih awal dari tanggal berangkat.',
+                            ])
                             ->live()
                             ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
                                 if ($state && $get('departure_date')) {
@@ -257,11 +350,16 @@ class SppdResource extends Resource
                             ->prefixIcon('heroicon-m-clock')
                             ->default(fn (?Sppd $record) => $record?->return_time ?? '17:00')
                             ->seconds(false)
-                            ->required(),
+                            ->required()
+                            ->validationMessages([
+                                'required' => 'Jam kembali wajib diisi.',
+                            ]),
                         Forms\Components\TextInput::make('total_days')
                             ->label('Total Durasi Dinas')
                             ->prefixIcon('heroicon-m-calendar-days')
                             ->numeric()
+                            ->integer()
+                            ->minValue(1)
                             ->default(function (?Sppd $record) {
                                 if ($record?->total_days) {
                                     return $record->total_days;
@@ -276,6 +374,10 @@ class SppdResource extends Resource
                             ->suffix('Hari')
                             ->helperText('Dihitung otomatis dari rentang tanggal.')
                             ->required()
+                            ->validationMessages([
+                                'required' => 'Total durasi dinas wajib diisi.',
+                                'min' => 'Total durasi dinas minimal 1 hari.',
+                            ])
                             ->readOnly(),
                     ])
                     ->columns(['default' => 1, 'sm' => 2, 'lg' => 5]),
@@ -289,7 +391,7 @@ class SppdResource extends Resource
                         Forms\Components\Fieldset::make('9. Kategori Wilayah Perjalanan Dinas')
                             ->schema([
                                 Forms\Components\Radio::make('travel_category')
-                                    ->hiddenLabel()
+                                    ->label('Pilih Kategori Wilayah')
                                     ->options([
                                         'Dalam Negeri' => 'Dalam Negeri',
                                         'Khusus' => 'Khusus',
@@ -297,8 +399,10 @@ class SppdResource extends Resource
                                     ])
                                     ->inline()
                                     ->inlineLabel(false)
-                                    ->default('Dalam Negeri')
                                     ->required()
+                                    ->validationMessages([
+                                        'required' => 'Kategori wilayah perjalanan dinas (poin 9) wajib dipilih.',
+                                    ])
                                     ->columnSpanFull(),
                             ]),
 
@@ -307,14 +411,16 @@ class SppdResource extends Resource
                                 Forms\Components\Fieldset::make('10. Jenis Perjalanan Dinas Umum')
                                     ->schema([
                                         Forms\Components\Radio::make('general_travel_type')
-                                            ->hiddenLabel()
+                                            ->label('Pilih Jenis Perjalanan Dinas Umum')
                                             ->options([
                                                 'Kunjungan Dinas Umum/Rapat Dinas/Dinas Survei' => 'Kunjungan Dinas Umum / Rapat Dinas / Dinas Survei',
                                                 'Pemindahan Permanen/Penugasan Sementara' => 'Pemindahan Permanen / Penugasan Sementara',
                                                 'Pendidikan dan Pelatihan' => 'Pendidikan dan Pelatihan',
                                             ])
-                                            ->default('Kunjungan Dinas Umum/Rapat Dinas/Dinas Survei')
                                             ->required()
+                                            ->validationMessages([
+                                                'required' => 'Jenis perjalanan dinas umum (poin 10) wajib dipilih.',
+                                            ])
                                             ->columnSpanFull(),
                                     ])
                                     ->columnSpan(1),
@@ -322,15 +428,17 @@ class SppdResource extends Resource
                                 Forms\Components\Fieldset::make('11. Jenis Perjalanan Dinas Khusus')
                                     ->schema([
                                         Forms\Components\Radio::make('special_travel_type')
-                                            ->hiddenLabel()
+                                            ->label('Pilih Jenis Perjalanan Dinas Khusus')
                                             ->options([
                                                 '≥ 80km dan menginap' => '≥ 80 km dan menginap',
                                                 '≥ 80km dan tidak menginap' => '≥ 80 km dan tidak menginap',
                                                 '≤ 80km dan menginap' => '≤ 80 km dan menginap',
                                                 '≤ 80 km dan tidak menginap' => '≤ 80 km dan tidak menginap',
                                             ])
-                                            ->default('≥ 80km dan menginap')
                                             ->required()
+                                            ->validationMessages([
+                                                'required' => 'Jenis perjalanan dinas khusus (poin 11) wajib dipilih.',
+                                            ])
                                             ->columnSpanFull(),
                                     ])
                                     ->columnSpan(1),
@@ -351,16 +459,20 @@ class SppdResource extends Resource
                                         'Sendiri' => 'Sendiri',
                                         'Kendaraan Dinas/Operasional' => 'Kendaraan Dinas / Operasional',
                                     ])
-                                    ->default('Sendiri')
-                                    ->required(),
+                                    ->required()
+                                    ->validationMessages([
+                                        'required' => 'Transportasi keberangkatan (poin 12) wajib dipilih.',
+                                    ]),
                                 Forms\Components\Radio::make('transport_arrival')
                                     ->label('13. Transportasi dari Bandara/Stasiun/Terminal (Kedatangan)')
                                     ->options([
                                         'Sendiri' => 'Sendiri',
                                         'Kendaraan Dinas/Operasional' => 'Kendaraan Dinas / Operasional',
                                     ])
-                                    ->default('Kendaraan Dinas/Operasional')
-                                    ->required(),
+                                    ->required()
+                                    ->validationMessages([
+                                        'required' => 'Transportasi kedatangan (poin 13) wajib dipilih.',
+                                    ]),
                             ])
                             ->columns(['default' => 1, 'md' => 2]),
 
@@ -374,10 +486,13 @@ class SppdResource extends Resource
                                         'TUD' => 'TUD — Transportasi Umum Darat',
                                         'KL' => 'KL — Kapal Laut',
                                     ])
-                                    ->default('KA')
-                                    ->required(),
+                                    ->required()
+                                    ->validationMessages([
+                                        'required' => 'Sarana transportasi utama (poin 14) wajib dipilih.',
+                                    ]),
                                 Forms\Components\CheckboxList::make('destination_transportation')
                                     ->label('15. Sarana Transportasi di Tujuan')
+                                    ->helperText('Pilih minimal satu sarana transportasi di lokasi tujuan.')
                                     ->options([
                                         'Penugasan = Penginapan' => 'Penugasan = Penginapan',
                                         'Kendaraan Dinas/Operasional' => 'Kendaraan Dinas / Operasional',
@@ -385,8 +500,12 @@ class SppdResource extends Resource
                                         'Sewa Kendaraan' => 'Sewa Kendaraan',
                                     ])
                                     ->columns(2)
-                                    ->default(['Penugasan = Penginapan', 'Kendaraan Dinas/Operasional'])
-                                    ->required(),
+                                    ->required()
+                                    ->minItems(1)
+                                    ->validationMessages([
+                                        'required' => 'Sarana transportasi di tujuan (poin 15) wajib dipilih minimal 1.',
+                                        'min' => 'Sarana transportasi di tujuan (poin 15) wajib dipilih minimal 1.',
+                                    ]),
                             ])
                             ->columns(['default' => 1, 'md' => 2]),
                     ]),
@@ -423,7 +542,8 @@ class SppdResource extends Resource
                         Infolists\Components\TextEntry::make('sppd_number')
                             ->label('Nomor SPPD')
                             ->badge()
-                            ->color('gray'),
+                            ->color('gray')
+                            ->placeholder('Nomor dokumen belum terbit'),
                         Infolists\Components\TextEntry::make('origin_location')
                             ->label('Tempat Kedudukan')
                             ->icon('heroicon-m-map-pin'),
@@ -559,7 +679,7 @@ class SppdResource extends Resource
                                 ->placeholder('-'),
                             Tables\Columns\TextColumn::make('sppd_number')
                                 ->description('Nomor SPPD', position: 'above')
-                                ->placeholder('Belum terbit (Draf)'),
+                                ->placeholder('Nomor dokumen belum terbit'),
                             Tables\Columns\TextColumn::make('travel_category')
                                 ->description('Kategori & Sarana Transportasi', position: 'above')
                                 ->state(fn (Sppd $record) => ($record->travel_category ?: 'Dalam Negeri') . ' • ' . ($record->transportation_mode ?: '-')),
@@ -570,6 +690,7 @@ class SppdResource extends Resource
                 ])->collapsible(),
             ])
             ->filters([
+                \App\Filament\Admin\Support\RecapTableSupport::monthYearFilter('departure_date'),
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status')
                     ->options([
@@ -581,20 +702,20 @@ class SppdResource extends Resource
             ])
             ->actions([
                 Tables\Actions\Action::make('review')
-                    ->label(fn (Sppd $record) => $record->status === 'pending' ? 'Review' : 'Lihat')
+                    ->label(fn (Sppd $record) => $record->status === 'pending' && auth()->user()?->hasAnyRole(['Manager', 'Supervisor', 'Superadmin', 'Admin']) ? 'Review' : 'Lihat')
                     ->icon('heroicon-o-document-magnifying-glass')
                     ->button()
                     ->size('sm')
                     ->color(fn (Sppd $record) => $record->status === 'pending' ? 'warning' : 'gray')
                     ->url(fn (Sppd $record) => static::getUrl('review', ['record' => $record]))
-                    ->visible(fn (Sppd $record) => $record->status !== 'draft'),
+                    ->visible(fn (Sppd $record) => $record->status !== 'draft' || auth()->user()?->hasAnyRole(['Superadmin', 'Admin', 'HR'])),
                 Tables\Actions\EditAction::make()
                     ->label(fn (Sppd $record) => $record->status === 'draft' ? 'Isi Form SPPD' : 'Ubah')
                     ->icon('heroicon-o-pencil-square')
                     ->button()
                     ->size('sm')
                     ->color('warning')
-                    ->visible(fn (Sppd $record) => $record->status === 'draft' || auth()->user()?->hasRole(['Superadmin', 'Admin'])),
+                    ->visible(fn (Sppd $record) => static::canEdit($record)),
                 Tables\Actions\Action::make('print')
                     ->label('Cetak')
                     ->icon('heroicon-o-printer')
@@ -609,7 +730,8 @@ class SppdResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
                         ->label('Hapus Terpilih')
-                        ->icon('heroicon-o-trash'),
+                        ->icon('heroicon-o-trash')
+                        ->visible(fn () => static::canDeleteAny()),
                 ]),
             ]);
     }

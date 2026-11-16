@@ -25,9 +25,11 @@ class AdminPanelProvider extends PanelProvider
         return $panel
             ->id('admin')
             ->path('admin')
-            ->login()
+            ->login(\App\Filament\Admin\Pages\Auth\Login::class)
             ->colors([
                 'primary' => Color::Amber,
+                'indigo' => Color::Indigo,
+                'teal' => Color::Teal,
             ])
             ->font('Outfit')
             ->brandName('MOTIVA')
@@ -40,15 +42,33 @@ class AdminPanelProvider extends PanelProvider
             ->maxContentWidth('full')
             ->navigationGroups([
                 \Filament\Navigation\NavigationGroup::make()
-                    ->label('Dokumen'),
+                    ->label('Dokumen')
+                    ->icon('heroicon-o-document-text')
+                    ->collapsed(),
                 \Filament\Navigation\NavigationGroup::make()
-                    ->label('Persetujuan'),
+                    ->label('Persetujuan')
+                    ->icon('heroicon-o-clipboard-document-check')
+                    ->collapsed(),
                 \Filament\Navigation\NavigationGroup::make()
-                    ->label('Keuangan'),
+                    ->label('Keuangan')
+                    ->icon('heroicon-o-banknotes')
+                    ->collapsed(),
                 \Filament\Navigation\NavigationGroup::make()
-                    ->label('Manajemen Pengguna'),
+                    ->label('Log')
+                    ->icon('heroicon-o-clipboard-document-list')
+                    ->collapsed(),
                 \Filament\Navigation\NavigationGroup::make()
-                    ->label('Pengaturan'),
+                    ->label('Data Pegawai')
+                    ->icon('heroicon-o-user-group')
+                    ->collapsed(),
+                \Filament\Navigation\NavigationGroup::make()
+                    ->label('Hak Akses & Pengguna')
+                    ->icon('heroicon-o-shield-check')
+                    ->collapsed(),
+                \Filament\Navigation\NavigationGroup::make()
+                    ->label('Pengaturan')
+                    ->icon('heroicon-o-cog-6-tooth')
+                    ->collapsed(),
             ])
             ->discoverClusters(in: app_path('Filament/Admin/Clusters'), for: 'App\\Filament\\Admin\\Clusters')
             ->discoverResources(in: app_path('Filament/Admin/Resources'), for: 'App\\Filament\\Admin\\Resources')
@@ -78,6 +98,19 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
-            ]);
+            ])
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::HEAD_END,
+                fn (): string => <<<'HTML'
+                <style>
+                    @media (max-width: 639px) {
+                        .fi-main { overflow-x: clip; }
+                        .fi-ta-actions { flex-wrap: wrap !important; gap: 0.375rem !important; }
+                        .fi-in-entry-wrp, .fi-in-text { min-width: 0; max-width: 100%; }
+                        .fi-header-actions { flex-wrap: wrap !important; gap: 0.5rem !important; }
+                    }
+                </style>
+                HTML
+            );
     }
 }

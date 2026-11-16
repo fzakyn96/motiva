@@ -9,15 +9,12 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Filament\Pages\SubNavigationPosition;
-use App\Filament\Admin\Clusters\DataPegawai;
 
 class EmployeeResource extends Resource
 {
     protected static ?string $model = Employee::class;
 
-    protected static ?string $cluster = DataPegawai::class;
-    protected static SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
+    protected static ?string $navigationGroup = 'Data Pegawai';
 
     protected static ?string $navigationIcon = 'heroicon-o-identification';
     protected static ?string $navigationLabel = 'Data Pegawai';
@@ -115,48 +112,64 @@ class EmployeeResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('identity_number')
-                    ->label('NIP')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold'),
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Pegawai')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('department.name')
-                    ->label('Unit Kerja')
-                    ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'MESI' => 'info',
-                        'Regional 1' => 'success',
-                        'Regional 2' => 'warning',
-                        'Regional 3' => 'primary',
-                        'Jakarta' => 'success',
-                        default => 'gray',
-                    })
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('position.name')
-                    ->label('Jabatan')
-                    ->badge()
-                    ->color('gray')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('manager.name')
-                    ->label('Atasan Langsung')
-                    ->placeholder('-')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('user.email')
-                    ->label('Email Akun')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('user.roles.name')
-                    ->label('Peran (Role)')
-                    ->badge()
-                    ->color('primary')
-                    ->searchable(),
+                Tables\Columns\Layout\Split::make([
+                    Tables\Columns\TextColumn::make('name')
+                        ->label('Nama Pegawai')
+                        ->searchable()
+                        ->sortable()
+                        ->weight('bold'),
+                    Tables\Columns\TextColumn::make('identity_number')
+                        ->label('NIP')
+                        ->searchable()
+                        ->sortable()
+                        ->color('gray'),
+                    Tables\Columns\TextColumn::make('department.name')
+                        ->label('Unit Kerja')
+                        ->badge()
+                        ->color(fn (string $state): string => match ($state) {
+                            'MESI' => 'info',
+                            'Regional 1' => 'success',
+                            'Regional 2' => 'warning',
+                            'Regional 3' => 'primary',
+                            'Jakarta' => 'success',
+                            default => 'gray',
+                        })
+                        ->searchable()
+                        ->sortable()
+                        ->grow(false),
+                ])->from('md'),
+
+                Tables\Columns\Layout\Panel::make([
+                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2, 'md' => 3])
+                        ->schema([
+                            Tables\Columns\TextColumn::make('position.name')
+                                ->description('Jabatan', position: 'above')
+                                ->badge()
+                                ->color('gray')
+                                ->searchable()
+                                ->sortable(),
+                            Tables\Columns\TextColumn::make('manager.name')
+                                ->description('Atasan Langsung', position: 'above')
+                                ->placeholder('-')
+                                ->searchable()
+                                ->sortable(),
+                            Tables\Columns\TextColumn::make('user.username')
+                                ->description('Username', position: 'above')
+                                ->placeholder('-')
+                                ->searchable()
+                                ->sortable(),
+                            Tables\Columns\TextColumn::make('user.email')
+                                ->description('Email Akun', position: 'above')
+                                ->placeholder('-')
+                                ->searchable()
+                                ->sortable(),
+                            Tables\Columns\TextColumn::make('user.roles.name')
+                                ->description('Peran (Role)', position: 'above')
+                                ->badge()
+                                ->color('primary')
+                                ->searchable(),
+                        ]),
+                ])->collapsible(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('department_id')

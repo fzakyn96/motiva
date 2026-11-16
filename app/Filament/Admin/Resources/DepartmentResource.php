@@ -2,13 +2,11 @@
 
 namespace App\Filament\Admin\Resources;
 
-use App\Filament\Admin\Clusters\DataPegawai;
 use App\Filament\Admin\Resources\DepartmentResource\Pages;
 use App\Models\Department;
 use App\Models\Organization;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Pages\SubNavigationPosition;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -17,8 +15,7 @@ class DepartmentResource extends Resource
 {
     protected static ?string $model = Department::class;
 
-    protected static ?string $cluster = DataPegawai::class;
-    protected static SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
+    protected static ?string $navigationGroup = 'Data Pegawai';
 
     protected static ?string $navigationIcon = 'heroicon-o-building-office-2';
     protected static ?string $navigationLabel = 'Master Unit Kerja';
@@ -89,30 +86,41 @@ class DepartmentResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('code')
-                    ->label('Kode Unit')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold'),
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Unit Kerja')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('organization.name')
-                    ->label('Organisasi')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('employees_count')
-                    ->label('Jumlah Pegawai')
-                    ->counts('employees')
-                    ->badge()
-                    ->color('info')
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Dibuat Pada')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\Layout\Split::make([
+                    Tables\Columns\TextColumn::make('code')
+                        ->label('Kode Unit')
+                        ->searchable()
+                        ->sortable()
+                        ->weight('bold')
+                        ->grow(false),
+                    Tables\Columns\TextColumn::make('name')
+                        ->label('Nama Unit Kerja')
+                        ->searchable()
+                        ->sortable(),
+                    Tables\Columns\TextColumn::make('employees_count')
+                        ->label('Jumlah Pegawai')
+                        ->counts('employees')
+                        ->badge()
+                        ->color('info')
+                        ->formatStateUsing(fn ($state) => "{$state} Pegawai")
+                        ->sortable()
+                        ->grow(false),
+                ])->from('md'),
+
+                Tables\Columns\Layout\Panel::make([
+                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2])
+                        ->schema([
+                            Tables\Columns\TextColumn::make('organization.name')
+                                ->description('Organisasi', position: 'above')
+                                ->placeholder('-')
+                                ->searchable()
+                                ->sortable(),
+                            Tables\Columns\TextColumn::make('created_at')
+                                ->description('Dibuat Pada', position: 'above')
+                                ->dateTime('d/m/Y H:i')
+                                ->sortable(),
+                        ]),
+                ])->collapsible(),
             ])
             ->filters([
                 //

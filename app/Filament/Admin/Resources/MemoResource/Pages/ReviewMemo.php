@@ -22,7 +22,7 @@ class ReviewMemo extends ViewRecord
     public static function authorizeResourceAccess(): void
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-        abort_unless($user && ($user->hasRole(['Manager', 'Supervisor', 'Admin', 'Superadmin', 'HR']) || static::getResource()::canAccess()), 403);
+        abort_unless($user && $user->hasAnyRole(['Manager', 'Admin', 'Superadmin', 'HR']), 403);
     }
 
     public function getBreadcrumbs(): array
@@ -269,6 +269,52 @@ class ReviewMemo extends ViewRecord
                 ->url(fn () => route('memos.print', $this->getRecord()))
                 ->openUrlInNewTab()
                 ->visible(fn () => $this->getRecord()?->status === 'approved'),
+
+            Action::make('delete')
+                ->label('Hapus Memo')
+                ->icon('heroicon-o-trash')
+                ->color('danger')
+                ->visible(fn () => $this->getRecord() && MemoResource::canDelete($this->getRecord()))
+                ->requiresConfirmation()
+                ->modalIcon('heroicon-o-exclamation-triangle')
+                ->modalHeading(fn (): string => $this->getRecord()?->status === 'approved'
+                    ? 'Hapus Memo yang Sudah Disetujui?'
+                    : 'Hapus Dokumen Memo?')
+                ->modalDescription(fn (): string => $this->getRecord()?->status === 'approved'
+                    ? 'Memo ini telah disetujui (Approved). Menghapus Memo ini akan otomatis menghapus SPPD, Biaya SPPD, dan Reimbursement terkait. Wajib sertakan alasan penghapusan di bawah ini.'
+                    : 'Menghapus Memo ini akan otomatis menghapus SPPD, Biaya SPPD, dan Reimbursement terkait (jika ada).')
+                ->modalSubmitActionLabel(fn (): string => $this->getRecord()?->status === 'approved'
+                    ? 'Ya, Hapus'
+                    : 'Ya, Hapus')
+                ->form(fn (): array => $this->getRecord()?->status === 'approved'
+                    ? [
+                        Forms\Components\Textarea::make('deletion_reason')
+                            ->label('Alasan Penghapusan Memo')
+                            ->placeholder('Wajib diisi: Jelaskan secara rinci alasan penghapusan Memo yang sudah disetujui ini...')
+                            ->required()
+                            ->minLength(5)
+                            ->rows(3),
+                    ]
+                    : [
+                        Forms\Components\Textarea::make('deletion_reason')
+                            ->label('Alasan Penghapusan Memo (Audit Trail)')
+                            ->placeholder('Opsional: Tambahkan catatan/alasan penghapusan untuk Audit Trail...')
+                            ->rows(2),
+                    ])
+                ->action(function (array $data): void {
+                    /** @var Memo $record */
+                    $record = $this->getRecord();
+                    $wasApproved = $record->status === 'approved';
+                    $record->deleteWithAudit(auth()->user(), $data['deletion_reason'] ?? null);
+
+                    Notification::make()
+                        ->title($wasApproved ? 'Memo yang sudah disetujui berhasil dihapus ' : 'Memo berhasil dihapus')
+                            ->body('Dokumen Memo beserta SPPD, Biaya SPPD, dan Reimbursement terkait telah dihapus.')
+                        ->warning()
+                        ->send();
+
+                    $this->redirect(MemoResource::getUrl('index'));
+                }),
 
             Action::make('back')
                 ->label('Kembali')

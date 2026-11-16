@@ -9,14 +9,16 @@ use App\Filament\Admin\Pages\SignatureSettingsPage;
 use App\Filament\Admin\Resources\DepartmentResource;
 use App\Filament\Admin\Resources\EmployeeResource;
 use App\Filament\Admin\Resources\MemoApprovalResource;
+use App\Filament\Admin\Resources\MemoLogResource;
 use App\Filament\Admin\Resources\MemoResource;
 use App\Filament\Admin\Resources\PermissionResource;
 use App\Filament\Admin\Resources\PositionResource;
-use App\Filament\Admin\Resources\ReimbursementApprovalResource;
-use App\Filament\Admin\Resources\ReimbursementResource;
+use App\Filament\Admin\Resources\ReimbursementLogResource;
 use App\Filament\Admin\Resources\RoleResource;
 use App\Filament\Admin\Resources\SppdApprovalResource;
+use App\Filament\Admin\Resources\SppdCostLogResource;
 use App\Filament\Admin\Resources\SppdCostResource;
+use App\Filament\Admin\Resources\SppdLogResource;
 use App\Filament\Admin\Resources\SppdRateStandardResource;
 use App\Filament\Admin\Resources\SppdResource;
 use App\Filament\Admin\Resources\UserResource;
@@ -64,49 +66,51 @@ class RoleMenuAccessControlTest extends TestCase
         $this->actingAs($this->managerUser);
         $this->assertFalse(MemoResource::shouldRegisterNavigation(), 'Manager should not see Memo menu');
         $this->assertFalse(MemoResource::canViewAny(), 'Manager should not view generic memo list');
+        $this->assertTrue(MemoLogResource::shouldRegisterNavigation(), 'Manager MUST see Log Memo menu');
+        $this->assertTrue(MemoLogResource::canViewAny(), 'Manager MUST access Log Memo');
         $this->assertFalse(SppdResource::shouldRegisterNavigation(), 'Manager should not see SPPD menu');
         $this->assertFalse(SppdResource::canViewAny(), 'Manager should not view generic SPPD list');
-        $this->assertFalse(ReimbursementResource::shouldRegisterNavigation(), 'Manager should not see Keuangan -> Reimbursement menu');
-        $this->assertFalse(ReimbursementResource::canViewAny(), 'Manager should not view generic reimbursement list');
         $this->assertTrue(MemoApprovalResource::canViewAny(), 'Manager can access Persetujuan Memo');
         $this->assertTrue(SppdApprovalResource::canViewAny(), 'Manager can access Persetujuan SPPD');
-        $this->assertTrue(ReimbursementApprovalResource::canViewAny(), 'Manager can access Persetujuan Reimbursement');
 
         // 2. Supervisor check
         $this->actingAs($this->supervisorUser);
         $this->assertFalse(MemoResource::shouldRegisterNavigation(), 'Supervisor should not see Memo menu');
         $this->assertFalse(MemoResource::canViewAny(), 'Supervisor should not view generic memo list');
+        $this->assertFalse(MemoLogResource::shouldRegisterNavigation(), 'Supervisor should NOT see Log Memo');
+        $this->assertFalse(MemoLogResource::canViewAny(), 'Supervisor should NOT access Log Memo');
         $this->assertFalse(SppdResource::shouldRegisterNavigation(), 'Supervisor should not see SPPD menu');
         $this->assertFalse(SppdResource::canViewAny(), 'Supervisor should not view generic SPPD list');
-        $this->assertFalse(ReimbursementResource::shouldRegisterNavigation(), 'Supervisor should not see Keuangan -> Reimbursement menu');
-        $this->assertFalse(ReimbursementResource::canViewAny(), 'Supervisor should not view generic reimbursement list');
         $this->assertFalse(MemoApprovalResource::canViewAny(), 'Supervisor should not access Persetujuan Memo');
         $this->assertTrue(SppdApprovalResource::canViewAny(), 'Supervisor can access Persetujuan SPPD');
-        $this->assertFalse(ReimbursementApprovalResource::canViewAny(), 'Supervisor should not access Persetujuan Reimbursement');
 
-        // 3. Staff check (Staff can create/view their own memos, sppd, reimbursement, but cannot access Persetujuan)
+        // 3. Staff check (Staff CANNOT access Memo at all, CAN access SPPD, CANNOT access Persetujuan or Log Memo)
         $this->actingAs($this->staffUser);
-        $this->assertTrue(MemoResource::shouldRegisterNavigation());
-        $this->assertTrue(MemoResource::canViewAny());
-        $this->assertTrue(SppdResource::shouldRegisterNavigation());
-        $this->assertTrue(SppdResource::canViewAny());
-        $this->assertTrue(ReimbursementResource::shouldRegisterNavigation());
-        $this->assertTrue(ReimbursementResource::canViewAny());
+        $this->assertFalse(MemoResource::shouldRegisterNavigation(), 'Staff must NOT see Memo menu');
+        $this->assertFalse(MemoResource::canViewAny(), 'Staff must NOT access Memo list');
+        $this->assertFalse(MemoResource::canCreate(), 'Staff must NOT create Memo');
+        $this->assertFalse(MemoLogResource::shouldRegisterNavigation(), 'Staff must NOT see Log Memo');
+        $this->assertFalse(MemoLogResource::canViewAny(), 'Staff must NOT access Log Memo');
+        $this->assertTrue(SppdResource::shouldRegisterNavigation(), 'Staff can see SPPD menu');
+        $this->assertTrue(SppdResource::canViewAny(), 'Staff can access SPPD list');
         $this->assertFalse(MemoApprovalResource::canViewAny(), 'Staff should not access Persetujuan Memo');
         $this->assertFalse(SppdApprovalResource::canViewAny(), 'Staff should not access Persetujuan SPPD');
-        $this->assertFalse(ReimbursementApprovalResource::canViewAny(), 'Staff should not access Persetujuan Reimbursement');
 
-        // 4. HR check (HR maintains full operational access)
+        // 4. HR check (HR maintains operational access to Memo, SPPD, but NOT Log Memo)
         $this->actingAs($this->hrUser);
         $this->assertTrue(MemoResource::shouldRegisterNavigation());
         $this->assertTrue(MemoResource::canViewAny());
+        $this->assertFalse(MemoLogResource::shouldRegisterNavigation(), 'HR must NOT see Log Memo menu');
+        $this->assertFalse(MemoLogResource::canViewAny(), 'HR must NOT access Log Memo');
         $this->assertTrue(SppdResource::shouldRegisterNavigation());
         $this->assertTrue(SppdResource::canViewAny());
-        $this->assertTrue(ReimbursementResource::shouldRegisterNavigation());
-        $this->assertTrue(ReimbursementResource::canViewAny());
         $this->assertTrue(MemoApprovalResource::canViewAny());
         $this->assertTrue(SppdApprovalResource::canViewAny());
-        $this->assertTrue(ReimbursementApprovalResource::canViewAny());
+
+        // 5. Superadmin check (Superadmin CAN access Log Memo)
+        $this->actingAs($this->superadminUser);
+        $this->assertTrue(MemoLogResource::shouldRegisterNavigation(), 'Superadmin MUST see Log Memo menu');
+        $this->assertTrue(MemoLogResource::canViewAny(), 'Superadmin MUST access Log Memo');
     }
 
     public function test_user_management_is_only_accessible_by_hr_and_superadmin(): void
@@ -216,28 +220,36 @@ class RoleMenuAccessControlTest extends TestCase
         $this->assertSame(1, MemoApprovalResource::getNavigationSort());
         $this->assertSame('Persetujuan', SppdApprovalResource::getNavigationGroup());
         $this->assertSame(2, SppdApprovalResource::getNavigationSort());
-        $this->assertSame('Persetujuan', ReimbursementApprovalResource::getNavigationGroup());
-        $this->assertSame(3, ReimbursementApprovalResource::getNavigationSort());
 
         // 3. Grup Keuangan
-        $this->assertSame('Keuangan', ReimbursementResource::getNavigationGroup());
-        $this->assertSame(1, ReimbursementResource::getNavigationSort());
         $this->assertSame('Keuangan', SppdCostResource::getNavigationGroup());
         $this->assertSame(2, SppdCostResource::getNavigationSort());
         $this->assertSame('Keuangan', SppdRateStandardResource::getNavigationGroup());
         $this->assertSame(3, SppdRateStandardResource::getNavigationSort());
 
-        // 4. Grup Manajemen Pengguna
-        $this->assertSame('Manajemen Pengguna', DataPegawai::getNavigationGroup());
-        $this->assertSame(1, DataPegawai::getNavigationSort());
+        // 4. Grup Log (Audit Trail)
+        $this->assertSame('Log', MemoLogResource::getNavigationGroup());
+        $this->assertSame(1, MemoLogResource::getNavigationSort());
+        $this->assertSame('Log', SppdLogResource::getNavigationGroup());
+        $this->assertSame(2, SppdLogResource::getNavigationSort());
+        $this->assertSame('Log', SppdCostLogResource::getNavigationGroup());
+        $this->assertSame(3, SppdCostLogResource::getNavigationSort());
+        $this->assertSame('Log', ReimbursementLogResource::getNavigationGroup());
+        $this->assertSame(4, ReimbursementLogResource::getNavigationSort());
+
+        // 5. Grup Data Pegawai & Hak Akses & Pengguna (collapsed navigation groups)
+        $this->assertSame('Data Pegawai', EmployeeResource::getNavigationGroup());
         $this->assertSame(1, EmployeeResource::getNavigationSort());
+        $this->assertSame('Data Pegawai', DepartmentResource::getNavigationGroup());
         $this->assertSame(2, DepartmentResource::getNavigationSort());
+        $this->assertSame('Data Pegawai', PositionResource::getNavigationGroup());
         $this->assertSame(3, PositionResource::getNavigationSort());
 
-        $this->assertSame('Manajemen Pengguna', HakAkses::getNavigationGroup());
-        $this->assertSame(2, HakAkses::getNavigationSort());
+        $this->assertSame('Hak Akses & Pengguna', UserResource::getNavigationGroup());
         $this->assertSame(1, UserResource::getNavigationSort());
+        $this->assertSame('Hak Akses & Pengguna', RoleResource::getNavigationGroup());
         $this->assertSame(2, RoleResource::getNavigationSort());
+        $this->assertSame('Hak Akses & Pengguna', PermissionResource::getNavigationGroup());
         $this->assertSame(3, PermissionResource::getNavigationSort());
 
         // 5. Grup Pengaturan

@@ -38,7 +38,13 @@ class Reimbursement extends Model
     protected static function booted(): void
     {
         static::creating(function (Reimbursement $reimbursement) {
-            if (empty($reimbursement->reimbursement_number)) {
+            if ($reimbursement->status === 'approved' && empty($reimbursement->reimbursement_number)) {
+                $reimbursement->reimbursement_number = static::generateNumber();
+            }
+        });
+
+        static::updating(function (Reimbursement $reimbursement) {
+            if ($reimbursement->status === 'approved' && empty($reimbursement->reimbursement_number)) {
                 $reimbursement->reimbursement_number = static::generateNumber();
             }
         });
@@ -116,5 +122,60 @@ class Reimbursement extends Model
     public function isRejected(): bool
     {
         return $this->status === 'rejected';
+    }
+
+    /**
+     * Hapus Reimbursement dan catat ke Log Reimbursement (Audit Trail).
+     */
+    public function deleteWithAudit(?User $user = null, ?string $reason = null): ReimbursementLog
+    {
+        $user = $user ?? auth()->user();
+        $trimmedReason = trim((string) $reason) ?: 'Penghapusan dokumen Reimbursement (Status: ' . ($this->status ?: 'draft') . ')';
+
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($user, $trimmedReason) {
+            $this->loadMissing(['employee.department', 'sppd.businessTrip.memo', 'expenses']);
+
+            $log = ReimbursementLog::create([
+                'reimbursement_id' => $this->id,
+                'sppd_id' => $this->sppd_id,
+                'reimbursement_number' => $this->reimbursement_number,
+                'sppd_number' => $this->sppd?->sppd_number,
+                'nomor_memo' => $this->sppd?->businessTrip?->memo?->nomor_memo,
+                'employee_name' => $this->employee?->name,
+                'department_name' => $this->employee?->department?->name,
+                'title' => $this->title,
+                'total_amount' => (float) $this->total_amount,
+                'total_claim_amount' => (float) $this->total_claim_amount,
+                'expenses_count' => $this->expenses->count(),
+                'reimbursement_status' => $this->status ?: 'draft',
+                'action' => 'deleted_reimbursement',
+                'deletion_reason' => $trimmedReason,
+                'deleted_by_user_id' => $user?->id,
+                'deleted_by_name' => $user?->employee?->name ?? $user?->name ?? 'System',
+                'deleted_by_role' => $user ? $user->getRoleNames()->implode(', ') : null,
+                'reimbursement_snapshot' => [
+                    'reimbursement_number' => $this->reimbursement_number,
+                    'title' => $this->title,
+                    'notes' => $this->notes,
+                    'status' => $this->status,
+                    'total_amount' => (float) $this->total_amount,
+                    'total_claim_amount' => (float) $this->total_claim_amount,
+                    'expenses' => $this->expenses->map(fn ($exp) => [
+                        'expense_type' => $exp->expense_type,
+                        'description' => $exp->description,
+                        'amount' => (float) $exp->amount,
+                        'is_company_paid' => (bool) $exp->is_company_paid,
+                    ])->values()->all(),
+                ],
+            ]);
+
+            DocumentSignature::where('document_type', self::class)
+                ->where('document_id', $this->id)
+                ->delete();
+
+            $this->delete();
+
+            return $log;
+        });
     }
 }

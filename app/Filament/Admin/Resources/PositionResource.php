@@ -2,12 +2,10 @@
 
 namespace App\Filament\Admin\Resources;
 
-use App\Filament\Admin\Clusters\DataPegawai;
 use App\Filament\Admin\Resources\PositionResource\Pages;
 use App\Models\Position;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Pages\SubNavigationPosition;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -16,8 +14,7 @@ class PositionResource extends Resource
 {
     protected static ?string $model = Position::class;
 
-    protected static ?string $cluster = DataPegawai::class;
-    protected static SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
+    protected static ?string $navigationGroup = 'Data Pegawai';
 
     protected static ?string $navigationIcon = 'heroicon-o-briefcase';
     protected static ?string $navigationLabel = 'Master Jabatan';
@@ -93,44 +90,54 @@ class PositionResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('code')
-                    ->label('Kode Jabatan')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold'),
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Jabatan')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('level')
-                    ->label('Level Hirarki')
-                    ->badge()
-                    ->formatStateUsing(fn (int $state): string => match ($state) {
-                        1 => 'Level 1 (Manager)',
-                        2 => 'Level 2 (Supervisor)',
-                        3 => 'Level 3 (HR)',
-                        4 => 'Level 4 (Staff)',
-                        default => "Level {$state}",
-                    })
-                    ->color(fn (int $state): string => match ($state) {
-                        1 => 'danger',
-                        2 => 'warning',
-                        3 => 'info',
-                        4 => 'gray',
-                        default => 'gray',
-                    })
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('employees_count')
-                    ->label('Jumlah Pegawai')
-                    ->counts('employees')
-                    ->badge()
-                    ->color('primary')
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Dibuat Pada')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\Layout\Split::make([
+                    Tables\Columns\TextColumn::make('code')
+                        ->label('Kode Jabatan')
+                        ->searchable()
+                        ->sortable()
+                        ->weight('bold')
+                        ->grow(false),
+                    Tables\Columns\TextColumn::make('name')
+                        ->label('Nama Jabatan')
+                        ->searchable()
+                        ->sortable(),
+                    Tables\Columns\TextColumn::make('level')
+                        ->label('Level Hirarki')
+                        ->badge()
+                        ->formatStateUsing(fn (int $state): string => match ($state) {
+                            1 => 'Level 1 (Manager)',
+                            2 => 'Level 2 (Supervisor)',
+                            3 => 'Level 3 (HR)',
+                            4 => 'Level 4 (Staff)',
+                            default => "Level {$state}",
+                        })
+                        ->color(fn (int $state): string => match ($state) {
+                            1 => 'danger',
+                            2 => 'warning',
+                            3 => 'info',
+                            4 => 'gray',
+                            default => 'gray',
+                        })
+                        ->sortable()
+                        ->grow(false),
+                ])->from('md'),
+
+                Tables\Columns\Layout\Panel::make([
+                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2])
+                        ->schema([
+                            Tables\Columns\TextColumn::make('employees_count')
+                                ->description('Jumlah Pegawai', position: 'above')
+                                ->counts('employees')
+                                ->badge()
+                                ->color('primary')
+                                ->formatStateUsing(fn ($state) => "{$state} Pegawai")
+                                ->sortable(),
+                            Tables\Columns\TextColumn::make('created_at')
+                                ->description('Dibuat Pada', position: 'above')
+                                ->dateTime('d/m/Y H:i')
+                                ->sortable(),
+                        ]),
+                ])->collapsible(),
             ])
             ->filters([
                 //

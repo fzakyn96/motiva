@@ -39,12 +39,12 @@ class SppdPolicy
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(['Admin', 'Superadmin', 'Manager', 'Supervisor', 'HR', 'Staff'])
-            || $user->can('create_sppd');
+        return $user->hasAnyRole(['Admin', 'Superadmin', 'HR']);
     }
 
     public function update(User $user, Sppd $sppd): bool
     {
+        // HR dan Superadmin boleh mengedit SPPD
         if ($user->hasAnyRole(['Admin', 'Superadmin', 'HR'])) {
             return true;
         }
@@ -54,14 +54,9 @@ class SppdPolicy
             return false;
         }
 
-        // Staff assigned to this SPPD can edit/process their own draft SPPD
+        // Staff hanya bisa melakukan edit SPPD miliknya jika status SPPD masih draft DAN pengaturan mengizinkan Staff mengisi form SPPD
         if ((int) $sppd->employee_id === (int) $employee->id) {
-            return in_array($sppd->status, ['draft', 'pending']);
-        }
-
-        // Supervisor, Manager in the same unit can update
-        if ($user->hasAnyRole(['Manager', 'Supervisor'])) {
-            return $sppd->employee?->department_id === $employee->department_id;
+            return $sppd->status === 'draft' && \App\Models\SppdSetting::current()->isStaffFiller();
         }
 
         return false;
@@ -69,6 +64,7 @@ class SppdPolicy
 
     public function delete(User $user, Sppd $sppd): bool
     {
+        // HR dan Staff tidak boleh menghapus SPPD (hanya Superadmin/Admin)
         return $user->hasAnyRole(['Admin', 'Superadmin']);
     }
 }

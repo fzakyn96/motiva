@@ -44,11 +44,14 @@ class EmployeeSeederTest extends TestCase
         $this->seed(RolesAndPermissionsSeeder::class);
         $this->seed(EmployeeSeeder::class);
 
-        // Verifikasi Manager
+        // Verifikasi Division Head & Manager
+        $divisionHead = Employee::whereHas('user', fn ($q) => $q->role('Division Head'))->first();
+        $this->assertNotNull($divisionHead);
+
         $manager = Employee::where('identity_number', '125000001')->first();
         $this->assertNotNull($manager);
         $this->assertEquals('M Nuramzan Iftari', $manager->name);
-        $this->assertNull($manager->manager_id);
+        $this->assertEquals($divisionHead->id, $manager->manager_id);
         $this->assertTrue($manager->user->hasRole('Manager'));
         $this->assertEquals('Jakarta', $manager->department->name);
 
@@ -105,7 +108,7 @@ class EmployeeSeederTest extends TestCase
         $this->assertEquals('Novi Dwi Astuti', $novi->name);
         $this->assertEquals($spvIkhsan->id, $novi->manager_id);
 
-        // Total data pegawai: 32 sampel pegawai + 1 Manager + 2 Supervisor + 1 HR = 36 pegawai
-        $this->assertEquals(36, Employee::count());
+        // Total data pegawai: 32 sampel pegawai + 1 Division Head + 1 Manager + 2 Supervisor + 1 HR = 37 pegawai
+        $this->assertEquals(37, Employee::count());
     }
 }

@@ -2,12 +2,10 @@
 
 namespace App\Filament\Admin\Resources;
 
-use App\Filament\Admin\Clusters\HakAkses;
 use App\Filament\Admin\Resources\UserResource\Pages;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Pages\SubNavigationPosition;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -17,8 +15,7 @@ class UserResource extends Resource
 {
     protected static ?string $model = User::class;
 
-    protected static ?string $cluster = HakAkses::class;
-    protected static SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
+    protected static ?string $navigationGroup = 'Hak Akses & Pengguna';
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
     protected static ?string $navigationLabel = 'Pengguna';
@@ -64,6 +61,14 @@ class UserResource extends Resource
                             ->placeholder('Masukkan nama lengkap pengguna')
                             ->required()
                             ->maxLength(255),
+                        Forms\Components\TextInput::make('username')
+                            ->label('Username Login')
+                            ->prefixIcon('heroicon-m-at-symbol')
+                            ->placeholder('contoh: budi.santoso')
+                            ->helperText('Dapat digunakan untuk login selain menggunakan alamat email.')
+                            ->regex('/^[A-Za-z0-9._-]+$/')
+                            ->unique(ignoreRecord: true)
+                            ->maxLength(100),
                         Forms\Components\TextInput::make('email')
                             ->label('Alamat Email Login')
                             ->prefixIcon('heroicon-m-envelope')
@@ -99,26 +104,40 @@ class UserResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Nama')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('email')
-                    ->label('Email')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('roles.name')
-                    ->label('Peran')
-                    ->badge()
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Dibuat Pada')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('updated_at')
-                    ->label('Diperbarui Pada')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\Layout\Split::make([
+                    Tables\Columns\TextColumn::make('name')
+                        ->label('Nama')
+                        ->searchable()
+                        ->weight('bold'),
+                    Tables\Columns\TextColumn::make('username')
+                        ->label('Username')
+                        ->placeholder('-')
+                        ->searchable()
+                        ->sortable()
+                        ->color('gray'),
+                    Tables\Columns\TextColumn::make('roles.name')
+                        ->label('Peran')
+                        ->badge()
+                        ->searchable()
+                        ->grow(false),
+                ])->from('md'),
+
+                Tables\Columns\Layout\Panel::make([
+                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 3])
+                        ->schema([
+                            Tables\Columns\TextColumn::make('email')
+                                ->description('Email', position: 'above')
+                                ->searchable(),
+                            Tables\Columns\TextColumn::make('created_at')
+                                ->description('Dibuat Pada', position: 'above')
+                                ->dateTime('d/m/Y H:i')
+                                ->sortable(),
+                            Tables\Columns\TextColumn::make('updated_at')
+                                ->description('Diperbarui Pada', position: 'above')
+                                ->dateTime('d/m/Y H:i')
+                                ->sortable(),
+                        ]),
+                ])->collapsible(),
             ])
             ->filters([
                 //

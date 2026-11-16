@@ -368,4 +368,394 @@ class DomainMemoTest extends TestCase
             ->set('activeTab', 'approved')
             ->assertSet('activeTab', 'approved');
     }
+
+    public function test_staff_cannot_access_or_perform_crud_on_memo(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+
+        $org = Organization::create(['name' => 'PT Motiva', 'code' => 'MTV']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Jakarta', 'code' => 'JKT']);
+        $pos = Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $staffUser = \App\Models\User::factory()->create(['name' => 'Staff User']);
+        $staffUser->assignRole('Staff');
+        $staffEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'user_id' => $staffUser->id,
+            'name' => 'Staff User',
+            'identity_number' => 'STF-MEMO-01',
+        ]);
+
+        $memo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $staffEmp->id,
+            'to_recipient' => 'Manager',
+            'agenda' => 'Memo Test Staff Restriction',
+            'content' => 'Content',
+            'status' => 'draft',
+        ]);
+
+        $this->actingAs($staffUser);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        $this->assertFalse(\App\Filament\Admin\Resources\MemoResource::shouldRegisterNavigation());
+        $this->assertFalse(\App\Filament\Admin\Resources\MemoResource::canViewAny());
+        $this->assertFalse(\App\Filament\Admin\Resources\MemoResource::canCreate());
+        $this->assertFalse(\App\Filament\Admin\Resources\MemoResource::canView($memo));
+        $this->assertFalse(\App\Filament\Admin\Resources\MemoResource::canEdit($memo));
+        $this->assertFalse(\App\Filament\Admin\Resources\MemoResource::canDelete($memo));
+
+        $this->get(route('memos.print', $memo))->assertForbidden();
+    }
+
+    public function test_hr_can_delete_approved_memo_only_with_reason_and_creates_audit_log_accessible_only_by_manager_and_superadmin(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+
+        $org = Organization::create(['name' => 'PT Motiva', 'code' => 'MTV']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Jakarta', 'code' => 'JKT']);
+        $pos = Position::create(['name' => 'HR Specialist', 'code' => 'HR', 'level' => 3]);
+
+        $hrUser = \App\Models\User::factory()->create(['name' => 'HR Motiva']);
+        $hrUser->assignRole('HR');
+        $hrEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'user_id' => $hrUser->id,
+            'name' => 'HR Motiva',
+            'identity_number' => 'HR-LOG-01',
+        ]);
+
+        $managerUser = \App\Models\User::factory()->create(['name' => 'Manager Motiva']);
+        $managerUser->assignRole('Manager');
+
+        $superadminUser = \App\Models\User::factory()->create(['name' => 'Superadmin Motiva']);
+        $superadminUser->assignRole('Superadmin');
+
+        $staffUser = \App\Models\User::factory()->create(['name' => 'Staff Motiva']);
+        $staffUser->assignRole('Staff');
+
+        $approvedMemo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $hrEmp->id,
+            'to_recipient' => 'Manager Jakarta',
+            'agenda' => 'Penugasan Dinas Luar Kota Bandung',
+            'title' => 'Penugasan Dinas Luar Kota Bandung',
+            'nomor_memo' => '099/MEMO/JKT/11/2026',
+            'content' => 'Isi memo penugasan',
+            'date' => '2026-11-10',
+            'status' => 'approved',
+            'participants' => [
+                ['employee_id' => $hrEmp->id],
+            ],
+        ]);
+
+        // Pastikan tanpa alasan penghapusan gagal pada level domain
+        $this->expectException(\InvalidArgumentException::class);
+        $approvedMemo->deleteWithAudit($hrUser, '');
+    }
+
+    public function test_hr_deleting_approved_memo_via_table_action_stores_memo_log_and_enforces_role_access(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+
+        $org = Organization::create(['name' => 'PT Motiva', 'code' => 'MTV']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'Jakarta', 'code' => 'JKT']);
+        $pos = Position::create(['name' => 'HR Specialist', 'code' => 'HR', 'level' => 3]);
+
+        $hrUser = \App\Models\User::factory()->create(['name' => 'HR Motiva']);
+        $hrUser->assignRole('HR');
+        $hrEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'user_id' => $hrUser->id,
+            'name' => 'HR Motiva',
+            'identity_number' => 'HR-LOG-02',
+        ]);
+
+        $managerUser = \App\Models\User::factory()->create(['name' => 'Manager Motiva']);
+        $managerUser->assignRole('Manager');
+
+        $superadminUser = \App\Models\User::factory()->create(['name' => 'Superadmin Motiva']);
+        $superadminUser->assignRole('Superadmin');
+
+        $approvedMemo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $hrEmp->id,
+            'to_recipient' => 'Manager Jakarta',
+            'agenda' => 'Penugasan Audit Lapangan Semarang',
+            'title' => 'Penugasan Audit Lapangan Semarang',
+            'nomor_memo' => '100/MEMO/JKT/11/2026',
+            'content' => 'Isi memo penugasan Semarang',
+            'date' => '2026-11-12',
+            'status' => 'approved',
+            'participants' => [
+                ['employee_id' => $hrEmp->id],
+            ],
+        ]);
+
+        // Ambil SPPD otomatis yang ter-generate dari Memo yang disetujui, lalu tambahkan Biaya SPPD & Reimbursement
+        $sppd = Sppd::whereHas('businessTrip', fn ($q) => $q->where('memo_id', $approvedMemo->id))->first();
+        $this->assertNotNull($sppd);
+
+        $sppdCost = \App\Models\SppdCost::create([
+            'sppd_id' => $sppd->id,
+            'base_type' => 'office_base_stay',
+            'official_days' => 3,
+            'subtotal_transport' => 500000,
+            'subtotal_per_diem' => 1200000,
+            'subtotal_other' => 100000,
+            'total_cost' => 1800000,
+        ]);
+
+        $reimbursement = \App\Models\Reimbursement::create([
+            'employee_id' => $hrEmp->id,
+            'sppd_id' => $sppd->id,
+            'title' => 'Reimbursement Tol & Parkir Semarang',
+            'total_amount' => 350000,
+            'total_claim_amount' => 350000,
+            'status' => 'approved',
+        ]);
+
+        $expectedNomorMemo = $approvedMemo->nomor_memo;
+        $expectedSppdNumber = $sppd->sppd_number;
+        $expectedReimbNumber = $reimbursement->reimbursement_number;
+
+        $this->actingAs($hrUser);
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        // 1. Jika HR menghapus tanpa mengisi alasan pada modal, validasi form gagal dan memo tetap ada
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\MemoResource\Pages\ListMemos::class)
+            ->callTableAction('delete', $approvedMemo, data: [
+                'deletion_reason' => '',
+            ])
+            ->assertHasTableActionErrors(['deletion_reason' => 'required']);
+
+        $this->assertDatabaseHas('memos', ['id' => $approvedMemo->id]);
+
+        // 2. Jika HR menyertakan alasan penghapusan yang sah, memo + SPPD + Biaya SPPD + Reimbursement terhapus dan masuk ke 4 tabel log
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\MemoResource\Pages\ListMemos::class)
+            ->callTableAction('delete', $approvedMemo, data: [
+                'deletion_reason' => 'Kegiatan dinas dibatalkan karena perubahan jadwal klien.',
+            ])
+            ->assertHasNoTableActionErrors();
+
+        $this->assertDatabaseMissing('memos', ['id' => $approvedMemo->id]);
+        $this->assertDatabaseMissing('sppds', ['id' => $sppd->id]);
+        $this->assertDatabaseMissing('sppd_costs', ['id' => $sppdCost->id]);
+        $this->assertDatabaseMissing('reimbursements', ['id' => $reimbursement->id]);
+
+        $this->assertDatabaseHas('memo_logs', [
+            'memo_id' => $approvedMemo->id,
+            'nomor_memo' => $expectedNomorMemo,
+            'agenda' => 'Penugasan Audit Lapangan Semarang',
+            'memo_status' => 'approved',
+            'deleted_by_user_id' => $hrUser->id,
+            'deleted_by_name' => 'HR Motiva',
+            'deletion_reason' => 'Kegiatan dinas dibatalkan karena perubahan jadwal klien.',
+        ]);
+
+        $this->assertDatabaseHas('sppd_logs', [
+            'sppd_id' => $sppd->id,
+            'sppd_number' => $expectedSppdNumber,
+            'nomor_memo' => $expectedNomorMemo,
+            'deleted_by_user_id' => $hrUser->id,
+            'deletion_reason' => 'Kegiatan dinas dibatalkan karena perubahan jadwal klien.',
+        ]);
+
+        $this->assertDatabaseHas('sppd_cost_logs', [
+            'sppd_cost_id' => $sppdCost->id,
+            'sppd_number' => $expectedSppdNumber,
+            'nomor_memo' => $expectedNomorMemo,
+            'total_cost' => 1800000,
+            'deleted_by_user_id' => $hrUser->id,
+            'deletion_reason' => 'Kegiatan dinas dibatalkan karena perubahan jadwal klien.',
+        ]);
+
+        $this->assertDatabaseHas('reimbursement_logs', [
+            'reimbursement_id' => $reimbursement->id,
+            'reimbursement_number' => $expectedReimbNumber,
+            'sppd_number' => $expectedSppdNumber,
+            'nomor_memo' => $expectedNomorMemo,
+            'total_claim_amount' => 350000,
+            'deleted_by_user_id' => $hrUser->id,
+            'deletion_reason' => 'Kegiatan dinas dibatalkan karena perubahan jadwal klien.',
+        ]);
+
+        // 3. Pastikan penghapusan Memo yang BELUM disetujui (draft/pending) juga tercatat ke Log Memo
+        $draftMemo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $hrEmp->id,
+            'to_recipient' => 'Manager Jakarta',
+            'agenda' => 'Draf Memo Batal Diajukan',
+            'title' => 'Draf Memo Batal Diajukan',
+            'content' => 'Isi draf memo',
+            'date' => '2026-11-13',
+            'status' => 'draft',
+        ]);
+        $draftMemoId = $draftMemo->id;
+        $draftMemo->deleteWithAudit($hrUser, 'Draf memo salah input tujuan.');
+        $this->assertDatabaseMissing('memos', ['id' => $draftMemoId]);
+        $this->assertDatabaseHas('memo_logs', [
+            'memo_id' => $draftMemoId,
+            'memo_status' => 'draft',
+            'deletion_reason' => 'Draf memo salah input tujuan.',
+        ]);
+
+        // 4. HR tidak boleh mengakses halaman Log Memo, Log SPPD, Log Biaya SPPD, Log Reimbursement
+        $this->assertFalse(\App\Filament\Admin\Resources\MemoLogResource::canViewAny());
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdLogResource::canViewAny());
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdCostLogResource::canViewAny());
+        $this->assertFalse(\App\Filament\Admin\Resources\ReimbursementLogResource::canViewAny());
+
+        // 5. Manajer dan Superadmin boleh mengakses ke-4 halaman Log dan melihat data audit trail
+        $this->actingAs($managerUser);
+        $this->assertTrue(\App\Filament\Admin\Resources\MemoLogResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdLogResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdCostLogResource::canViewAny());
+        $this->assertTrue(\App\Filament\Admin\Resources\ReimbursementLogResource::canViewAny());
+
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\MemoLogResource\Pages\ManageMemoLogs::class)
+            ->assertSuccessful()
+            ->assertSee($expectedNomorMemo)
+            ->assertSee('Kegiatan dinas dibatalkan karena perubahan jadwal klien.');
+
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\SppdLogResource\Pages\ManageSppdLogs::class)
+            ->assertSuccessful()
+            ->assertSee($expectedSppdNumber);
+
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\SppdCostLogResource\Pages\ManageSppdCostLogs::class)
+            ->assertSuccessful()
+            ->assertSee($expectedSppdNumber);
+
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\ReimbursementLogResource\Pages\ManageReimbursementLogs::class)
+            ->assertSuccessful()
+            ->assertSee($expectedReimbNumber);
+
+        $this->actingAs($superadminUser);
+        $this->assertTrue(\App\Filament\Admin\Resources\MemoLogResource::canViewAny());
+    }
+
+    public function test_document_numbers_are_only_generated_after_manager_approval_and_displayed_in_pdf(): void
+    {
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+
+        $org = Organization::create(['name' => 'PT Permata Karya Jasa', 'code' => 'PKJ']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'MESI', 'code' => 'MESI']);
+        $mgrPos = Position::create(['name' => 'Manajer', 'code' => 'MGR', 'level' => 1]);
+        $spvPos = Position::create(['name' => 'Supervisor', 'code' => 'SPV', 'level' => 2]);
+        $stfPos = Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $mgrUser = \App\Models\User::factory()->create(['name' => 'Manager MESI']);
+        $mgrUser->assignRole('Manager');
+        $mgrEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+            'user_id' => $mgrUser->id,
+            'name' => 'Manager MESI',
+            'identity_number' => 'MGR-NUM-01',
+        ]);
+
+        $spvUser = \App\Models\User::factory()->create(['name' => 'Supervisor MESI']);
+        $spvUser->assignRole('Supervisor');
+        $spvEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $spvPos->id,
+            'user_id' => $spvUser->id,
+            'manager_id' => $mgrEmp->id,
+            'name' => 'Supervisor MESI',
+            'identity_number' => 'SPV-NUM-01',
+        ]);
+
+        $stfUser = \App\Models\User::factory()->create(['name' => 'Staff MESI']);
+        $stfUser->assignRole('Staff');
+        $stfEmp = Employee::create([
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'position_id' => $stfPos->id,
+            'user_id' => $stfUser->id,
+            'manager_id' => $spvEmp->id,
+            'name' => 'Staff MESI',
+            'identity_number' => 'STF-NUM-01',
+        ]);
+
+        // 1. Memo pending belum memiliki nomor_memo
+        $memo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $stfEmp->id,
+            'to_recipient' => 'Manager MESI',
+            'agenda' => 'Uji Penomoran Dokumen',
+            'title' => 'Uji Penomoran Dokumen',
+            'content' => 'Konten uji',
+            'date' => now()->toDateString(),
+            'participants' => [$stfEmp->id],
+            'status' => 'pending',
+        ]);
+        $this->assertNull($memo->nomor_memo);
+        $this->assertStringContainsString('Nomor dokumen belum terbit', view('memos.print', ['memo' => $memo])->render());
+
+        // Setelah Memo disetujui Manager, nomor_memo ter-generate dan SPPD draft belum punya sppd_number
+        $memo->update(['status' => 'approved']);
+        $memo->refresh();
+        $this->assertNotNull($memo->nomor_memo);
+
+        $memoHtml = view('memos.print', ['memo' => $memo])->render();
+        $this->assertStringContainsString($memo->nomor_memo, $memoHtml);
+
+        $sppd = \App\Models\Sppd::where('employee_id', $stfEmp->id)->firstOrFail();
+        $this->assertSame('draft', $sppd->status);
+        $this->assertNull($sppd->sppd_number);
+        $this->assertStringContainsString('Nomor dokumen belum terbit', view('sppds.print', [
+            'sppd' => $sppd,
+            'signerName' => $mgrEmp->name,
+            'signerPosition' => 'Manajer',
+            'signatureRender' => ['signed' => false],
+        ])->render());
+
+        // 2. SPPD diajukan (pending) dan disetujui Supervisor -> tetap belum ada sppd_number sebelum Manager approve
+        $sppd->update(['status' => 'pending']);
+        $resolver = new \App\Services\Approval\ApprovalResolver();
+        $sppdApproval = $sppd->approvalRequests()->firstOrFail();
+        $resolver->approve($sppdApproval, $spvEmp, 'OK SPV');
+        $this->assertNull($sppd->fresh()->sppd_number);
+
+        // Setelah Manager approve -> sppd_number ter-generate dan tampil di view PDF SPPD & Biaya SPPD
+        $resolver->approve($sppdApproval->fresh(), $mgrEmp, 'OK MGR');
+        $sppd->refresh();
+        $this->assertSame('approved', $sppd->status);
+        $this->assertNotNull($sppd->sppd_number);
+
+        $sppdHtml = view('sppds.print', [
+            'sppd' => $sppd,
+            'signerName' => $mgrEmp->name,
+            'signerPosition' => 'Manajer',
+            'signatureRender' => ['signed' => false],
+        ])->render();
+        $this->assertStringContainsString($sppd->sppd_number, $sppdHtml);
+
+        $cost = new \App\Models\SppdCost([
+            'sppd_id' => $sppd->id,
+            'creator_id' => $mgrUser->id,
+            'base_type' => 'office_base_stay',
+            'official_days' => 1,
+        ]);
+        $cost->recalculateTotals();
+        $cost->save();
+
+        $costHtml = view('sppd-costs.print', [
+            'cost' => $cost,
+            'sppd' => $sppd,
+            'signerName' => $mgrEmp->name,
+            'signerPosition' => 'Manajer',
+            'signerSignatureRender' => ['signed' => false],
+            'employeeSignatureRender' => ['signed' => false],
+        ])->render();
+        $this->assertStringContainsString($sppd->sppd_number, $costHtml);
+    }
 }

@@ -98,4 +98,107 @@ class Sppd extends Model
 
         return 'Menunggu Persetujuan';
     }
+
+    /**
+     * Resolve pejabat yang memberi perintah (selalu setingkat Manajer).
+     */
+    public function resolveAuthorizingManager(): ?Employee
+    {
+        $isManagerEmployee = static function (?Employee $emp): bool {
+            if (! $emp) {
+                return false;
+            }
+
+            if ($emp->user?->hasRole('Manager')) {
+                return true;
+            }
+
+            $posName = strtolower((string) ($emp->position?->name ?? ''));
+
+            return str_contains($posName, 'manager') || str_contains($posName, 'manajer');
+        };
+
+        // 1. Dari approval request SPPD yang sudah disetujui oleh Manajer
+        $sppdApproval = ApprovalRequest::where('document_type', self::class)
+            ->where('document_id', $this->id)
+            ->first();
+
+        if ($sppdApproval) {
+            $approvedSteps = $sppdApproval->steps()
+                ->where('status', 'approved')
+                ->with(['approver.position', 'approver.user', 'policyStep'])
+                ->get()
+                ->sortByDesc(fn ($s) => (int) ($s->policyStep?->step_order ?? 0));
+
+            foreach ($approvedSteps as $step) {
+                if ($isManagerEmployee($step->approver)) {
+                    return $step->approver;
+                }
+            }
+        }
+
+        // 2. Dari approval request Memo terkait yang disetujui oleh Manajer
+        $memo = $this->businessTrip?->memo;
+        if ($memo) {
+            $memoApproval = ApprovalRequest::where('document_type', Memo::class)
+                ->where('document_id', $memo->id)
+                ->first();
+
+            if ($memoApproval) {
+                $memoApproved = $memoApproval->steps()
+                    ->where('status', 'approved')
+                    ->with(['approver.position', 'approver.user'])
+                    ->latest('updated_at')
+                    ->first();
+
+                if ($isManagerEmployee($memoApproved?->approver)) {
+                    return $memoApproved->approver;
+                }
+            }
+        }
+
+        // 3. Telusuri hierarki atasan dari pegawai SPPD hingga level Manajer (lewati Supervisor/HR)
+        $cursor = $this->employee?->manager;
+        for ($i = 0; $i < 4 && $cursor; $i++) {
+            $cursor->loadMissing(['position', 'user', 'manager']);
+            if ($isManagerEmployee($cursor)) {
+                return $cursor;
+            }
+            $cursor = $cursor->manager;
+        }
+
+        // 4. Telusuri hierarki dari pembuat Memo hingga level Manajer
+        $memoCursor = $memo?->creator;
+        for ($i = 0; $i < 4 && $memoCursor; $i++) {
+            $memoCursor->loadMissing(['position', 'user', 'manager']);
+            if ($isManagerEmployee($memoCursor)) {
+                return $memoCursor;
+            }
+            $memoCursor = $memoCursor->manager;
+        }
+
+        // 5. Fallback berdasarkan unit kerja pegawai / memo
+        $deptId = $this->employee?->department_id ?? $memo?->department_id;
+        if ($deptId) {
+            $deptManager = Employee::with(['position', 'user'])
+                ->where('department_id', $deptId)
+                ->where(function ($q) {
+                    $q->whereHas('user.roles', fn ($rq) => $rq->where('name', 'Manager'))
+                        ->orWhereHas('position', fn ($pq) => $pq->where('name', 'like', '%Manager%')->orWhere('name', 'like', '%Manajer%'));
+                })
+                ->first();
+
+            if ($deptManager) {
+                return $deptManager;
+            }
+        }
+
+        // 6. Fallback global role Manager
+        return Employee::with(['position', 'user'])
+            ->where(function ($q) {
+                $q->whereHas('user.roles', fn ($rq) => $rq->where('name', 'Manager'))
+                    ->orWhereHas('position', fn ($pq) => $pq->where('name', 'like', '%Manager%')->orWhere('name', 'like', '%Manajer%'));
+            })
+            ->first();
+    }
 }

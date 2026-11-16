@@ -2,10 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Employee;
 use App\Models\SppdCost;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Http\Request;
 
 class SppdCostPrintController extends Controller
 {
@@ -15,6 +13,7 @@ class SppdCostPrintController extends Controller
         $cost->load([
             'sppd.employee.position',
             'sppd.employee.department',
+            'sppd.employee.manager.position',
             'sppd.businessTrip.memo.creator.manager.position',
             'sppd.businessTrip.memo.creator.position',
         ]);
@@ -25,27 +24,15 @@ class SppdCostPrintController extends Controller
         if (! $user) {
             abort(401);
         }
-        if (! $user->hasRole(['Superadmin', 'HR']) && (int) $sppd?->employee?->user_id !== (int) $user->id) {
-            abort(403, 'Akses formulir biaya SPPD dibatasi khusus bagian HR.');
+        if (! $user->hasRole(['Superadmin', 'Admin', 'HR', 'Manager', 'Division Head']) && (int) $sppd?->employee?->user_id !== (int) $user->id) {
+            abort(403, 'Akses formulir biaya SPPD tidak diizinkan.');
         }
 
-        // Resolve authorizing official (Pejabat yang memberi perintah)
-        $signer = $sppd->businessTrip?->memo?->creator?->manager
-            ?? $sppd->businessTrip?->memo?->creator
-            ?? $sppd->employee?->manager;
-
-        if (! $signer && $sppd->employee?->department_id) {
-            $signer = Employee::with('position')
-                ->where('department_id', $sppd->employee->department_id)
-                ->where(function ($q) {
-                    $q->whereHas('position', fn ($pq) => $pq->where('name', 'like', '%Manager%'))
-                      ->orWhereHas('user.roles', fn ($rq) => $rq->where('name', 'Manager'));
-                })
-                ->first();
-        }
+        // Pejabat yang memberi perintah selalu Manajer
+        $signer = $sppd?->resolveAuthorizingManager();
 
         $signerName = $signer?->name ?? '____________________';
-        $signerPosition = $signer?->position?->name ?? 'Pejabat Berwenang';
+        $signerPosition = $signer?->position?->name ?? 'Manajer';
 
         $sigService = app(\App\Services\Signature\SignatureService::class);
         $signerSignatureRender = $sigService->resolveRenderData(

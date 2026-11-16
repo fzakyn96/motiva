@@ -21,22 +21,19 @@ class EditSppd extends EditRecord
         $trip = $sppd->businessTrip;
         $employee = $sppd->employee;
 
-        // Otomatis isi Tempat Kedudukan
+        // Otomatis isi data faktual dari Pegawai / Memo / Business Trip
         if (empty($data['origin_location'])) {
             $data['origin_location'] = $employee?->area ?? 'Jakarta';
         }
 
-        // Otomatis isi Lokasi Penugasan dari Memo / Business Trip
         if (empty($data['destination_location'])) {
             $data['destination_location'] = $memo?->location ?? ($trip?->destination ?? '');
         }
 
-        // Otomatis isi Deskripsi Tujuan Penugasan dari Agenda Memo
         if (empty($data['assignment_purpose'])) {
             $data['assignment_purpose'] = $memo?->agenda ?? ($memo?->title ?? ($trip?->activity_name ?? ''));
         }
 
-        // Otomatis isi Tanggal Berangkat dari Memo / Business Trip
         if (! empty($data['departure_date'])) {
             $data['departure_date'] = \Carbon\Carbon::parse($data['departure_date'])->format('Y-m-d');
         } else {
@@ -44,7 +41,6 @@ class EditSppd extends EditRecord
             $data['departure_date'] = $rawDate ? \Carbon\Carbon::parse($rawDate)->format('Y-m-d') : null;
         }
 
-        // Otomatis isi Tanggal Kembali dari Memo / Business Trip
         if (! empty($data['return_date'])) {
             $data['return_date'] = \Carbon\Carbon::parse($data['return_date'])->format('Y-m-d');
         } else {
@@ -52,7 +48,14 @@ class EditSppd extends EditRecord
             $data['return_date'] = $rawRet ? \Carbon\Carbon::parse($rawRet)->format('Y-m-d') : $data['departure_date'];
         }
 
-        // Otomatis hitung Jumlah Hari
+        if (empty($data['departure_time'])) {
+            $data['departure_time'] = '08:00';
+        }
+
+        if (empty($data['return_time'])) {
+            $data['return_time'] = '17:00';
+        }
+
         if (empty($data['total_days']) && ! empty($data['departure_date']) && ! empty($data['return_date'])) {
             $start = \Carbon\Carbon::parse($data['departure_date']);
             $end = \Carbon\Carbon::parse($data['return_date']);
@@ -85,14 +88,17 @@ class EditSppd extends EditRecord
 
             Actions\DeleteAction::make()
                 ->label('Hapus')
-                ->icon('heroicon-o-trash'),
+                ->icon('heroicon-o-trash')
+                ->visible(fn () => SppdResource::canDelete($this->getRecord())),
         ];
     }
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        // Status otomatis menyesuaikan: bila masih draft, saat disimpan pegawai otomatis menjadi pending
-        if (empty($data['status']) || $data['status'] === 'draft') {
+        $currentStatus = $this->getRecord()?->status;
+
+        // Status otomatis menyesuaikan: bila masih draft, saat disimpan otomatis menjadi pending
+        if (empty($currentStatus) || $currentStatus === 'draft') {
             $data['status'] = 'pending';
         }
 
@@ -107,13 +113,14 @@ class EditSppd extends EditRecord
             (new \App\Observers\SppdObserver())->ensureApprovalRequestExists($record);
 
             $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-            if ($user && $user->hasConfiguredSignature()) {
+            $signerUser = $record->employee?->user ?? $user;
+            if ($signerUser && $signerUser->hasConfiguredSignature()) {
                 app(\App\Services\Signature\SignatureService::class)->signDocument(
                     $record,
-                    $record->employee ?? $user->employee,
+                    $record->employee ?? $user?->employee,
                     'requester',
-                    'Diajukan oleh Pegawai',
-                    $user
+                    'Menyetujui perhitungan biaya perjalanan dinas sesuai keputusan perusahaan',
+                    $signerUser
                 );
             }
         }
@@ -121,10 +128,27 @@ class EditSppd extends EditRecord
 
     protected function getFormActions(): array
     {
+        $isDraft = $this->getRecord()?->status === 'draft';
+
         return [
-            $this->getSaveFormAction()
-                ->label(fn () => $this->getRecord()->status === 'draft' ? 'Simpan & Ajukan SPPD' : 'Simpan Perubahan')
-                ->icon('heroicon-o-check'),
+            Actions\Action::make('save')
+                ->label($isDraft ? 'Simpan & Ajukan SPPD' : 'Simpan Perubahan')
+                ->icon('heroicon-o-check')
+                ->color('primary')
+                ->requiresConfirmation($isDraft)
+                ->modalIcon('heroicon-o-clipboard-document-check')
+                ->modalHeading('Konfirmasi Persetujuan Perhitungan Biaya SPPD')
+                ->modalDescription(function (): string {
+                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                    $base = 'Dengan menekan tombol "Setuju", Anda menyatakan menyetujui perhitungan biaya perjalanan dinas sesuai keputusan dan ketentuan perusahaan yang berlaku.';
+                    if (! $user?->hasConfiguredSignature()) {
+                        return $base . ' (Catatan: Anda belum mengatur tanda tangan digital di menu Pengaturan Tanda Tangan, sehingga tanda tangan pada formulir perhitungan biaya belum dapat ditampilkan otomatis).';
+                    }
+                    return $base . ' Tanda tangan digital Anda akan otomatis dibubuhkan pada Formulir Perhitungan Biaya Perjalanan Dinas.';
+                })
+                ->modalSubmitActionLabel('Setuju')
+                ->modalCancelActionLabel('Batal')
+                ->action(fn () => $this->save()),
             $this->getCancelFormAction()
                 ->label('Kembali')
                 ->icon('heroicon-o-arrow-left'),

@@ -157,6 +157,13 @@
                 <div class="header-title">
                     FORMULIR PERHITUNGAN BIAYA PERJALANAN DINAS<br>
                     PEKERJA PENEMPATAN PT PERMATA KARYA JASA
+                    <div style="font-size: 10px; font-weight: normal; margin-top: 3px;">
+                        @if($sppd?->sppd_number)
+                            Nomor SPPD: {{ $sppd->sppd_number }}
+                        @else
+                            <em>Nomor dokumen belum terbit</em>
+                        @endif
+                    </div>
                 </div>
             </td>
         </tr>
@@ -585,7 +592,7 @@
                             </td>
                             <td>
                                 <div class="sign-title">
-                                    Menerima Pembayaran Lunas<br>
+                                    <!-- Menerima Pembayaran Lunas<br> -->
                                     Pekerja yang Diperintahkan
                                 </div>
                                 @include('signatures.pdf-stamp', ['render' => $employeeSignatureRender, 'align' => 'center', 'emptyHeight' => '40px'])

@@ -155,7 +155,7 @@ class MemoApprovalResource extends Resource
                         ->schema([
                             Tables\Columns\TextColumn::make('document.nomor_memo')
                                 ->description('Nomor Memo', position: 'above')
-                                ->placeholder('Belum terbit'),
+                                ->placeholder('Nomor dokumen belum terbit'),
                             Tables\Columns\TextColumn::make('document.creator.name')
                                 ->description('Pengaju (Dari)', position: 'above')
                                 ->placeholder('-'),
@@ -185,6 +185,7 @@ class MemoApprovalResource extends Resource
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
+                \App\Filament\Admin\Support\RecapTableSupport::monthYearFilter('created_at'),
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status Persetujuan')
                     ->options([
@@ -195,8 +196,8 @@ class MemoApprovalResource extends Resource
             ])
             ->actions([
                 Tables\Actions\Action::make('review')
-                    ->label('Proses')
-                    ->icon('heroicon-o-play-circle')
+                    ->label('Review')
+                    ->icon('heroicon-o-eye')
                     ->button()
                     ->size('sm')
                     ->color('warning')

@@ -3,7 +3,6 @@
 namespace App\Filament\Admin\Widgets;
 
 use App\Filament\Admin\Resources\MemoResource;
-use App\Filament\Admin\Resources\ReimbursementResource;
 use App\Filament\Admin\Resources\SppdResource;
 use App\Models\ApprovalRequest;
 use App\Models\Memo;
@@ -195,9 +194,6 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                         }
                         if ($doc instanceof Sppd) {
                             return SppdResource::getUrl('review', ['record' => $doc->id, 'from' => 'approvals']);
-                        }
-                        if ($doc instanceof Reimbursement) {
-                            return ReimbursementResource::getUrl('review', ['record' => $doc->id, 'from' => 'approvals']);
                         }
                         return '#';
                     }),

@@ -12,6 +12,9 @@ class MemoPrintController extends Controller
 {
     public function __invoke(Memo $memo)
     {
+        $user = auth()->user();
+        abort_if(! $user || ($user->hasRole('Staff') && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Manager'])), 403);
+
         $memo->load(['creator.position', 'creator.manager.position', 'department']);
 
         // Resolve the Manager who approved or oversees this memo

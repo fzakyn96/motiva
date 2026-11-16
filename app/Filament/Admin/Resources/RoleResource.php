@@ -2,12 +2,10 @@
 
 namespace App\Filament\Admin\Resources;
 
-use App\Filament\Admin\Clusters\HakAkses;
 use App\Filament\Admin\Resources\RoleResource\Pages;
 use Spatie\Permission\Models\Role;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Pages\SubNavigationPosition;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -16,8 +14,7 @@ class RoleResource extends Resource
 {
     protected static ?string $model = Role::class;
 
-    protected static ?string $cluster = HakAkses::class;
-    protected static SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
+    protected static ?string $navigationGroup = 'Hak Akses & Pengguna';
 
     protected static ?string $navigationIcon = 'heroicon-o-shield-check';
     protected static ?string $navigationLabel = 'Peran (Role)';
@@ -81,23 +78,33 @@ class RoleResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Peran')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('permissions.name')
-                    ->label('Izin Akses')
-                    ->badge()
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Dibuat Pada')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('updated_at')
-                    ->label('Diperbarui Pada')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\Layout\Split::make([
+                    Tables\Columns\TextColumn::make('name')
+                        ->label('Nama Peran')
+                        ->searchable()
+                        ->weight('bold'),
+                    Tables\Columns\TextColumn::make('permissions_count')
+                        ->label('Jumlah Izin')
+                        ->counts('permissions')
+                        ->badge()
+                        ->color('primary')
+                        ->formatStateUsing(fn ($state) => "{$state} Izin")
+                        ->grow(false),
+                ])->from('md'),
+
+                Tables\Columns\Layout\Panel::make([
+                    Tables\Columns\Layout\Grid::make(['default' => 1])
+                        ->schema([
+                            Tables\Columns\TextColumn::make('permissions.name')
+                                ->description('Daftar Izin Akses', position: 'above')
+                                ->badge()
+                                ->searchable(),
+                            Tables\Columns\TextColumn::make('updated_at')
+                                ->description('Diperbarui Pada', position: 'above')
+                                ->dateTime('d/m/Y H:i')
+                                ->sortable(),
+                        ]),
+                ])->collapsible(),
             ])
             ->filters([
                 //

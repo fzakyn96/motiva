@@ -8,7 +8,7 @@
             margin: 20px 25px 20px 25px;
         }
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'DejaVu Sans', Arial, sans-serif;
             font-size: 11px;
             line-height: 1.25;
             color: #000;
@@ -48,11 +48,13 @@
         .chk-box {
             display: inline-block;
             width: 28px;
-            height: 14px;
+            height: 13px;
             border: 1.5px solid #000;
             text-align: center;
-            line-height: 14px;
-            font-size: 10px;
+            line-height: 11px;
+            padding-bottom: 2px;
+            font-family: 'DejaVu Sans', sans-serif;
+            font-size: 13px;
             font-weight: bold;
             margin-right: 6px;
             vertical-align: middle;
@@ -115,6 +117,13 @@
             <td class="title-area">
                 FORMULIR PERINTAH PERJALANAN DINAS<br>
                 PEKERJA PENEMPATAN PT PERMATA KARYA JASA
+                <div style="font-size: 10px; font-weight: normal; margin-top: 3px;">
+                    @if($sppd->sppd_number)
+                        {{ $sppd->sppd_number }}
+                    @else
+                        <em>Nomor dokumen belum terbit</em>
+                    @endif
+                </div>
             </td>
             <td style="width: 70px;"></td>
         </tr>
@@ -177,28 +186,28 @@
             <td class="col-num">9.</td>
             <td class="col-label">Kategori Perjalanan Dinas</td>
             <td colspan="4">
-                <span class="chk-box">{{ $isDalamNegeri ? 'V' : '' }}</span> Dalam Negeri &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                <span class="chk-box">{{ $isKhusus ? 'V' : '' }}</span> Khusus &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                <span class="chk-box">{{ $isLuarNegeri ? 'V' : '' }}</span> Luar Negeri
+                <span class="chk-box">{{ $isDalamNegeri ? '✔' : '' }}</span> Dalam Negeri &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                <span class="chk-box">{{ $isKhusus ? '✔' : '' }}</span> Khusus &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                <span class="chk-box">{{ $isLuarNegeri ? '✔' : '' }}</span> Luar Negeri
             </td>
         </tr>
         <tr>
             <td class="col-num" style="vertical-align: top;">10.</td>
             <td class="col-label" style="vertical-align: top;">Jenis Perjalanan Dinas Umum</td>
             <td colspan="4">
-                <div style="margin-bottom: 4px;"><span class="chk-box">{{ $isUmum1 ? 'V' : '' }}</span> Kunjungan Dinas Umum/Rapat Dinas/Dinas Survei *)</div>
-                <div style="margin-bottom: 4px;"><span class="chk-box">{{ $isUmum2 ? 'V' : '' }}</span> Pemindahan Permanen/Penugasan Sementara *)</div>
-                <div><span class="chk-box">{{ $isUmum3 ? 'V' : '' }}</span> Pendidikan dan Pelatihan</div>
+                <div style="margin-bottom: 4px;"><span class="chk-box">{{ $isUmum1 ? '✔' : '' }}</span> Kunjungan Dinas Umum/Rapat Dinas/Dinas Survei *)</div>
+                <div style="margin-bottom: 4px;"><span class="chk-box">{{ $isUmum2 ? '✔' : '' }}</span> Pemindahan Permanen/Penugasan Sementara *)</div>
+                <div><span class="chk-box">{{ $isUmum3 ? '✔' : '' }}</span> Pendidikan dan Pelatihan</div>
             </td>
         </tr>
         <tr>
             <td class="col-num" style="vertical-align: top;">11.</td>
             <td class="col-label" style="vertical-align: top;">Jenis Perjalanan Dinas Khusus</td>
             <td colspan="4">
-                <div style="margin-bottom: 4px;"><span class="chk-box">{{ $isSpec1 ? 'V' : '' }}</span> &ge; 80km dan menginap</div>
-                <div style="margin-bottom: 4px;"><span class="chk-box">{{ $isSpec2 ? 'V' : '' }}</span> &ge; 80km dan tidak menginap</div>
-                <div style="margin-bottom: 4px;"><span class="chk-box">{{ $isSpec3 ? 'V' : '' }}</span> &le; 80km dan menginap</div>
-                <div><span class="chk-box">{{ $isSpec4 ? 'V' : '' }}</span> &le; 80 km dan tidak menginap</div>
+                <div style="margin-bottom: 4px;"><span class="chk-box">{{ $isSpec1 ? '✔' : '' }}</span> &ge; 80km dan menginap</div>
+                <div style="margin-bottom: 4px;"><span class="chk-box">{{ $isSpec2 ? '✔' : '' }}</span> &ge; 80km dan tidak menginap</div>
+                <div style="margin-bottom: 4px;"><span class="chk-box">{{ $isSpec3 ? '✔' : '' }}</span> &le; 80km dan menginap</div>
+                <div><span class="chk-box">{{ $isSpec4 ? '✔' : '' }}</span> &le; 80 km dan tidak menginap</div>
             </td>
         </tr>
         <tr>
@@ -210,13 +219,13 @@
             <td colspan="4">
                 <div style="margin-bottom: 3px;">Di tempat keberangkatan :</div>
                 <div style="margin-bottom: 6px;">
-                    <span class="chk-box">{{ $depSendiri ? 'V' : '' }}</span> Sendiri &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                    <span class="chk-box">{{ $depDinas ? 'V' : '' }}</span> Kendaraan Dinas/Operasional
+                    <span class="chk-box">{{ $depSendiri ? '✔' : '' }}</span> Sendiri &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                    <span class="chk-box">{{ $depDinas ? '✔' : '' }}</span> Kendaraan Dinas/Operasional
                 </div>
                 <div style="margin-bottom: 3px;">Di tempat kedatangan :</div>
                 <div>
-                    <span class="chk-box">{{ $arrSendiri ? 'V' : '' }}</span> Sendiri &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                    <span class="chk-box">{{ $arrDinas ? 'V' : '' }}</span> Kendaraan Dinas/Operasional
+                    <span class="chk-box">{{ $arrSendiri ? '✔' : '' }}</span> Sendiri &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                    <span class="chk-box">{{ $arrDinas ? '✔' : '' }}</span> Kendaraan Dinas/Operasional
                 </div>
             </td>
         </tr>
@@ -224,10 +233,10 @@
             <td class="col-num">13.</td>
             <td class="col-label">Sarana Transportasi</td>
             <td colspan="4">
-                <span class="chk-box">{{ $isPU ? 'V' : '' }}</span> PU &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                <span class="chk-box">{{ $isKA ? 'V' : '' }}</span> KA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                <span class="chk-box">{{ $isTUD ? 'V' : '' }}</span> TUD &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                <span class="chk-box">{{ $isKL ? 'V' : '' }}</span> KL
+                <span class="chk-box">{{ $isPU ? '✔' : '' }}</span> PU &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                <span class="chk-box">{{ $isKA ? '✔' : '' }}</span> KA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                <span class="chk-box">{{ $isTUD ? '✔' : '' }}</span> TUD &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                <span class="chk-box">{{ $isKL ? '✔' : '' }}</span> KL
             </td>
         </tr>
         <tr>
@@ -237,18 +246,18 @@
                 <table style="width: 100%; border-collapse: collapse; border: none;">
                     <tr>
                         <td style="border: none; padding: 2px 0; width: 50%;">
-                            <span class="chk-box">{{ $tujuanPenginapan ? 'V' : '' }}</span> Penugasan = Penginapan
+                            <span class="chk-box">{{ $tujuanPenginapan ? '✔' : '' }}</span> Penugasan = Penginapan
                         </td>
                         <td style="border: none; padding: 2px 0; width: 50%;">
-                            <span class="chk-box">{{ $tujuanDinas ? 'V' : '' }}</span> Kendaraan Dinas/Operasional
+                            <span class="chk-box">{{ $tujuanDinas ? '✔' : '' }}</span> Kendaraan Dinas/Operasional
                         </td>
                     </tr>
                     <tr>
                         <td style="border: none; padding: 2px 0;">
-                            <span class="chk-box">{{ $tujuanSendiri ? 'V' : '' }}</span> Mengatur Sendiri
+                            <span class="chk-box">{{ $tujuanSendiri ? '✔' : '' }}</span> Mengatur Sendiri
                         </td>
                         <td style="border: none; padding: 2px 0;">
-                            <span class="chk-box">{{ $tujuanSewa ? 'V' : '' }}</span> Sewa Kendaraan
+                            <span class="chk-box">{{ $tujuanSewa ? '✔' : '' }}</span> Sewa Kendaraan
                         </td>
                     </tr>
                 </table>
@@ -265,7 +274,7 @@
                     );
                 @endphp
                 <div style="font-weight: bold; font-size: 11px;">Pejabat yang memberi perintah,</div>
-                <div style="font-weight: bold; font-size: 11px; margin-bottom: 6px;">User,</div>
+                <!-- <div style="font-weight: bold; font-size: 11px; margin-bottom: 6px;">User,</div> -->
                 @include('signatures.pdf-stamp', ['render' => $signatureRender, 'align' => 'center', 'emptyHeight' => '48px'])
                 <div style="margin-top: 6px;">
                     ( <span style="display: inline-block; min-width: 160px; text-decoration: underline; font-weight: bold;">{{ $signerName }}</span> )

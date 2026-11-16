@@ -284,7 +284,7 @@ class ReviewSppd extends ViewRecord
     {
         return [
             Action::make('approve')
-                ->label(fn () => $this->getCurrentStepOrder() === 1 ? 'Setujui (Supervisor)' : ($this->getCurrentStepOrder() === 2 ? 'Setujui (Manajer - Final)' : 'Setujui SPPD'))
+                ->label(fn () => $this->getCurrentStepOrder() === 1 ? 'Setujui' : ($this->getCurrentStepOrder() === 2 ? 'Setujui' : 'Setujui SPPD'))
                 ->icon('heroicon-o-check-circle')
                 ->color('success')
                 ->visible(fn () => $this->canPerformApproval())

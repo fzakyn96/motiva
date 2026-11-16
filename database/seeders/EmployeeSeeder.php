@@ -39,8 +39,9 @@ class EmployeeSeeder extends Seeder
             Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
         }
 
-        // 2. Setup Roles (Superadmin, Manager, Supervisor, HR, Staff) - Tidak ada user Admin
+        // 2. Setup Roles (Superadmin, Division Head, Manager, Supervisor, HR, Staff) - Tidak ada user Admin
         $roleSuperadmin = Role::firstOrCreate(['name' => 'Superadmin', 'guard_name' => 'web']);
+        $roleDivisionHead = Role::firstOrCreate(['name' => 'Division Head', 'guard_name' => 'web']);
         $roleManager = Role::firstOrCreate(['name' => 'Manager', 'guard_name' => 'web']);
         $roleSupervisor = Role::firstOrCreate(['name' => 'Supervisor', 'guard_name' => 'web']);
         $roleHR = Role::firstOrCreate(['name' => 'HR', 'guard_name' => 'web']);
@@ -48,13 +49,15 @@ class EmployeeSeeder extends Seeder
 
         $roleSuperadmin->syncPermissions($permissions);
 
-        $roleManager->syncPermissions([
+        $managerPermissions = [
             'view_any_memo', 'view_memo', 'create_memo', 'update_memo', 'delete_memo',
             'view_any_sppd', 'view_sppd', 'create_sppd', 'update_sppd',
             'view_any_reimbursement', 'view_reimbursement', 'create_reimbursement', 'update_reimbursement',
             'view_any_employee', 'view_employee',
             'approve_memo', 'approve_sppd', 'approve_reimbursement',
-        ]);
+        ];
+        $roleDivisionHead->syncPermissions($managerPermissions);
+        $roleManager->syncPermissions($managerPermissions);
 
         $roleSupervisor->syncPermissions([
             'view_any_memo', 'view_memo', 'create_memo', 'update_memo',
@@ -66,7 +69,7 @@ class EmployeeSeeder extends Seeder
 
         $roleHR->syncPermissions([
             'view_any_memo', 'view_memo', 'create_memo', 'update_memo', 'delete_memo',
-            'view_any_sppd', 'view_sppd', 'create_sppd', 'update_sppd', 'delete_sppd',
+            'view_any_sppd', 'view_sppd', 'create_sppd', 'update_sppd',
             'view_any_sppd::cost', 'view_sppd::cost', 'create_sppd::cost', 'update_sppd::cost', 'delete_sppd::cost',
             'view_any_sppd::rate::standard', 'view_sppd::rate::standard', 'create_sppd::rate::standard', 'update_sppd::rate::standard', 'delete_sppd::rate::standard',
             'view_any_reimbursement', 'view_reimbursement', 'create_reimbursement', 'update_reimbursement', 'delete_reimbursement',
@@ -76,9 +79,8 @@ class EmployeeSeeder extends Seeder
         ]);
 
         $roleStaff->syncPermissions([
-            'view_any_memo', 'view_memo', 'create_memo', 'update_memo',
-            'view_any_sppd', 'view_sppd', 'create_sppd',
-            'view_any_reimbursement', 'view_reimbursement', 'create_reimbursement',
+            'view_any_sppd', 'view_sppd', 'update_sppd',
+            'view_any_reimbursement', 'view_reimbursement', 'create_reimbursement', 'update_reimbursement', 'delete_reimbursement',
             'view_any_employee', 'view_employee',
         ]);
 
@@ -86,6 +88,14 @@ class EmployeeSeeder extends Seeder
         $org = Organization::firstOrCreate(
             ['code' => 'MOTIVA'],
             ['name' => 'PT Motiva Nusantara']
+        );
+        $orgPkj = Organization::firstOrCreate(
+            ['code' => 'PKJ'],
+            ['name' => 'PT Permata Karya Jasa']
+        );
+        $orgPgn = Organization::firstOrCreate(
+            ['code' => 'PGN'],
+            ['name' => 'PT Perusahaan Gas Negara (Persero) Tbk.']
         );
 
         // 4. Setup Departments (Unit / Area)
@@ -102,6 +112,9 @@ class EmployeeSeeder extends Seeder
 
         // 5. Setup Positions
         $positionsData = [
+            'Division Head Asset Integrity Management System' => ['code' => 'DIV-AIMS', 'level' => 0],
+            'Business Division Head' => ['code' => 'BDH', 'level' => 1],
+            'Sr. Expert I. Infrastructure Information System' => ['code' => 'SR-EXP-IIS', 'level' => 1],
             'Manager' => ['code' => 'MGR', 'level' => 1],
             'Supervisor' => ['code' => 'SPV', 'level' => 2],
             'HR Specialist' => ['code' => 'HR', 'level' => 3],
@@ -142,11 +155,74 @@ class EmployeeSeeder extends Seeder
             );
         }
 
-        // 6. Buat Atasan: Manager (M Nuramzan Iftari)
+        // 6. Buat Atasan PGN: Division Head (Herry Rachmadi) & Manager/Pemeriksa (M Nuramzan Iftari) & PKJ Business Division Head (Khairul Khitam)
+        $herryUser = User::firstOrCreate(
+            ['email' => 'herry.rachmadi@pgn.co.id'],
+            [
+                'name' => 'Herry Rachmadi',
+                'username' => 'herry.rachmadi',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ]
+        );
+        $herryUser->syncRoles([$roleDivisionHead]);
+
+        $herryEmployee = Employee::firstOrCreate(
+            ['identity_number' => '125000000'],
+            [
+                'user_id' => $herryUser->id,
+                'organization_id' => $orgPgn->id,
+                'department_id' => $deptJakarta->id,
+                'position_id' => $positions['Division Head Asset Integrity Management System']->id,
+                'manager_id' => null,
+                'name' => 'Herry Rachmadi',
+            ]
+        );
+        $herryEmployee->update([
+            'user_id' => $herryUser->id,
+            'organization_id' => $orgPgn->id,
+            'department_id' => $deptJakarta->id,
+            'position_id' => $positions['Division Head Asset Integrity Management System']->id,
+            'manager_id' => null,
+            'name' => 'Herry Rachmadi',
+        ]);
+
+        $khairulUser = User::firstOrCreate(
+            ['email' => 'khairul.khitam@pkj.co.id'],
+            [
+                'name' => 'Khairul Khitam',
+                'username' => 'khairul.khitam',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ]
+        );
+        $khairulUser->syncRoles([$roleManager]);
+
+        $khairulEmployee = Employee::firstOrCreate(
+            ['identity_number' => '125000002'],
+            [
+                'user_id' => $khairulUser->id,
+                'organization_id' => $orgPkj->id,
+                'department_id' => $deptJakarta->id,
+                'position_id' => $positions['Business Division Head']->id,
+                'manager_id' => null,
+                'name' => 'Khairul Khitam',
+            ]
+        );
+        $khairulEmployee->update([
+            'user_id' => $khairulUser->id,
+            'organization_id' => $orgPkj->id,
+            'department_id' => $deptJakarta->id,
+            'position_id' => $positions['Business Division Head']->id,
+            'manager_id' => null,
+            'name' => 'Khairul Khitam',
+        ]);
+
         $managerUser = User::firstOrCreate(
             ['email' => 'nuramzan.iftari@motiva.com'],
             [
                 'name' => 'M Nuramzan Iftari',
+                'username' => 'nuramzan.iftari',
                 'password' => Hash::make('password'),
                 'email_verified_at' => now(),
             ]
@@ -157,18 +233,19 @@ class EmployeeSeeder extends Seeder
             ['identity_number' => '125000001'],
             [
                 'user_id' => $managerUser->id,
-                'organization_id' => $org->id,
+                'organization_id' => $orgPgn->id,
                 'department_id' => $deptJakarta->id,
-                'position_id' => $positions['Manager']->id,
-                'manager_id' => null,
+                'position_id' => $positions['Sr. Expert I. Infrastructure Information System']->id,
+                'manager_id' => $herryEmployee->id,
                 'name' => 'M Nuramzan Iftari',
             ]
         );
         $managerEmployee->update([
             'user_id' => $managerUser->id,
+            'organization_id' => $orgPgn->id,
             'department_id' => $deptJakarta->id,
-            'position_id' => $positions['Manager']->id,
-            'manager_id' => null,
+            'position_id' => $positions['Sr. Expert I. Infrastructure Information System']->id,
+            'manager_id' => $herryEmployee->id,
             'name' => 'M Nuramzan Iftari',
         ]);
 

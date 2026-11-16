@@ -33,12 +33,8 @@ class MemoResource extends Resource
             return false;
         }
 
-        // Managers and Supervisors only need "Persetujuan Memo", not the master "Memo" menu
-        if ($user->hasAnyRole(['Manager', 'Supervisor']) && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
-            return false;
-        }
-
-        return true;
+        // Hanya HR dan Superadmin yang memiliki akses menu Memo (Staff, Supervisor, Manager tidak diizinkan)
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
     }
 
     public static function canViewAny(): bool
@@ -48,11 +44,66 @@ class MemoResource extends Resource
             return false;
         }
 
-        if ($user->hasAnyRole(['Manager', 'Supervisor']) && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+        // Staff tidak boleh mendapatkan akses Memo
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+    }
+
+    public static function canCreate(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
             return false;
         }
 
-        return parent::canViewAny();
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+    }
+
+    public static function canView(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+            return true;
+        }
+
+        // Manager tetap bisa membuka halaman ReviewMemo dari antrian Persetujuan Memo
+        if ($user->hasRole('Manager') || $user->can('approve_memo')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+            return $record->status === 'draft';
+        }
+
+        return false;
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
     }
 
     public static function getNavigationBadge(): ?string
@@ -140,6 +191,7 @@ class MemoResource extends Resource
                             ->label('Nomor Memo')
                             ->badge()
                             ->color('gray')
+                            ->placeholder('Nomor dokumen belum terbit')
                             ->copyable(),
                         Infolists\Components\TextEntry::make('date')
                             ->label('Tanggal Memo')
@@ -186,7 +238,7 @@ class MemoResource extends Resource
                             ->weight('bold')
                             ->color('primary'),
                         Infolists\Components\TextEntry::make('content')
-                            ->label('Uraian Isi Memo')
+                            ->label('Uraian/Latar Belakang')
                             ->html()
                             ->columnSpanFull(),
                     ])
@@ -251,7 +303,7 @@ class MemoResource extends Resource
                             ->visible(fn (string $context): bool => $context === 'edit')
                             ->columnSpanFull(),
                         Forms\Components\TextInput::make('to_recipient')
-                            ->label('Kepada (Tujuan Memo)')
+                            ->label('Kepada')
                             ->prefixIcon('heroicon-m-user-group')
                             ->placeholder('Contoh: Manajer Unit MESI / Seluruh Tim Proyek')
                             ->helperText('Jabatan atau pihak penerima memo dinas.')
@@ -267,7 +319,7 @@ class MemoResource extends Resource
                             ->required()
                             ->default(now()),
                         Forms\Components\RichEditor::make('content')
-                            ->label('Uraian Isi Memo')
+                            ->label('Uraian/Latar Belakang')
                             ->placeholder('Tuliskan latar belakang, maksud, dan rincian isi memo...')
                             ->toolbarButtons([
                                 'bold',
@@ -301,7 +353,7 @@ class MemoResource extends Resource
                                     ->placeholder('Contoh: Sinkronisasi Data Aset & Inspeksi Lapangan')
                                     ->maxLength(255),
                                 Forms\Components\TextInput::make('location')
-                                    ->label('Tempat / Lokasi Tujuan')
+                                    ->label('Tempat/Lokasi Tujuan')
                                     ->prefixIcon('heroicon-m-map-pin')
                                     ->placeholder('Contoh: Surabaya / Area Operasi Lampung')
                                     ->maxLength(255),
@@ -414,7 +466,7 @@ class MemoResource extends Resource
                         ->schema([
                             Tables\Columns\TextColumn::make('nomor_memo')
                                 ->description('Nomor Memo', position: 'above')
-                                ->placeholder('Belum terbit (Draf)'),
+                                ->placeholder('Nomor dokumen belum terbit'),
                             Tables\Columns\TextColumn::make('creator.name')
                                 ->description('Dari (Pengaju)', position: 'above')
                                 ->placeholder('-'),
@@ -445,7 +497,7 @@ class MemoResource extends Resource
                 ])->collapsible(),
             ])
             ->filters([
-                //
+                \App\Filament\Admin\Support\RecapTableSupport::monthYearFilter('date'),
             ])
             ->actions([
                 Tables\Actions\Action::make('review')
@@ -478,15 +530,52 @@ class MemoResource extends Resource
                     ->icon('heroicon-o-pencil-square')
                     ->button()
                     ->size('sm')
-                    ->visible(fn (Memo $record) => $record->status === 'draft'),
+                    ->visible(fn (Memo $record) => static::canEdit($record)),
+                Tables\Actions\DeleteAction::make('delete')
+                    ->label('Hapus')
+                    ->icon('heroicon-o-trash')
+                    ->button()
+                    ->size('sm')
+                    ->color('danger')
+                    ->visible(fn (Memo $record) => static::canDelete($record))
+                    ->requiresConfirmation()
+                    ->modalIcon('heroicon-o-exclamation-triangle')
+                    ->modalHeading(fn (Memo $record): string => $record->status === 'approved'
+                        ? 'Hapus Memo yang Sudah Disetujui?'
+                        : 'Hapus Dokumen Memo?')
+                    ->modalDescription(fn (Memo $record): string => $record->status === 'approved'
+                        ? 'Memo ini telah disetujui (Approved). Menghapus Memo ini akan otomatis menghapus SPPD, Biaya SPPD, dan Reimbursement terkait. Wajib sertakan alasan penghapusan di bawah ini.'
+                    : 'Menghapus Memo ini akan otomatis menghapus SPPD, Biaya SPPD, dan Reimbursement terkait (jika ada).')
+                    ->modalSubmitActionLabel(fn (Memo $record): string => $record->status === 'approved'
+                        ? 'Ya, Hapus'
+                        : 'Ya, Hapus')
+                    ->form(fn (Memo $record): array => $record->status === 'approved'
+                        ? [
+                            Forms\Components\Textarea::make('deletion_reason')
+                                ->label('Alasan Penghapusan Memo')
+                                ->placeholder('Wajib diisi: Jelaskan secara rinci alasan penghapusan Memo yang sudah disetujui ini...')
+                                ->required()
+                                ->minLength(5)
+                                ->rows(3),
+                        ]
+                        : [
+                            Forms\Components\Textarea::make('deletion_reason')
+                                ->label('Alasan Penghapusan Memo (Audit Trail)')
+                                ->placeholder('Opsional: Tambahkan catatan/alasan penghapusan untuk Audit Trail...')
+                                ->rows(2),
+                        ])
+                    ->action(function (Memo $record, array $data): void {
+                        $wasApproved = $record->status === 'approved';
+                        $record->deleteWithAudit(auth()->user(), $data['deletion_reason'] ?? null);
+
+                        \Filament\Notifications\Notification::make()
+                            ->title($wasApproved ? 'Memo yang sudah disetujui berhasil dihapus ' : 'Memo berhasil dihapus')
+                            ->body('Dokumen Memo beserta SPPD, Biaya SPPD, dan Reimbursement terkait telah dihapus.')
+                            ->warning()
+                            ->send();
+                    }),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->label('Hapus Terpilih')
-                        ->icon('heroicon-o-trash'),
-                ]),
-            ]);
+            ->bulkActions([]);
     }
 
     public static function getRelations(): array

@@ -3,11 +3,11 @@
 namespace App\Filament\Admin\Widgets;
 
 use App\Filament\Admin\Resources\MemoApprovalResource;
-use App\Filament\Admin\Resources\ReimbursementApprovalResource;
-use App\Filament\Admin\Resources\ReimbursementResource;
 use App\Filament\Admin\Resources\SppdApprovalResource;
 use App\Filament\Admin\Resources\SppdCostResource;
 use App\Filament\Admin\Resources\SppdResource;
+use App\Filament\Admin\Resources\TransportAccommodationApprovalResource;
+use App\Filament\Admin\Resources\TransportAccommodationRecapResource;
 use App\Models\ApprovalRequest;
 use App\Models\Memo;
 use App\Models\Reimbursement;
@@ -121,7 +121,7 @@ class ExecutiveOverviewWidget extends BaseWidget
             ? SppdApprovalResource::getUrl('index')
             : ($cntPendingMemo > 0
                 ? MemoApprovalResource::getUrl('index')
-                : ($cntPendingSppd > 0 ? SppdApprovalResource::getUrl('index') : ReimbursementApprovalResource::getUrl('index')));
+                : ($cntPendingSppd > 0 ? SppdApprovalResource::getUrl('index') : TransportAccommodationApprovalResource::getUrl('index')));
 
         $sppdUrl = $isAllAccess
             ? SppdResource::getUrl('index')
@@ -133,7 +133,7 @@ class ExecutiveOverviewWidget extends BaseWidget
 
         $reimbUrl = $isSupervisorOnly
             ? null
-            : ($user?->hasRole('Manager') ? ReimbursementApprovalResource::getUrl('index') : ReimbursementResource::getUrl('index'));
+            : ($user?->hasRole('Manager') ? TransportAccommodationApprovalResource::getUrl('index') : TransportAccommodationRecapResource::getUrl('index'));
 
         return [
             Stat::make('Antrian Persetujuan', $totalPending)

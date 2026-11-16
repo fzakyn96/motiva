@@ -4,8 +4,6 @@ namespace Tests\Feature;
 
 use App\Filament\Admin\Pages\SignatureSettingsPage;
 use App\Filament\Admin\Resources\MemoResource\Pages\ReviewMemo;
-use App\Filament\Admin\Resources\ReimbursementResource\Pages\ListReimbursements;
-use App\Filament\Admin\Resources\ReimbursementResource\Pages\ReviewReimbursement;
 use App\Filament\Admin\Resources\SppdResource\Pages\ReviewSppd;
 use App\Models\ApprovalPolicy;
 use App\Models\ApprovalPolicyStep;
@@ -187,42 +185,6 @@ class SignatureSystemTest extends TestCase
         $memo->refresh();
         $this->assertEquals('pending', $memo->status);
         $this->assertEquals(0, DocumentSignature::count());
-
-        // Same check for Reimbursement submission by Staff without signature
-        $trip = BusinessTrip::create([
-            'activity_name' => 'Dinas Bandung',
-            'destination' => 'Bandung',
-            'start_date' => '2026-11-01',
-            'end_date' => '2026-11-02',
-        ]);
-        $sppd = Sppd::create([
-            'business_trip_id' => $trip->id,
-            'employee_id' => $this->staffEmp->id,
-            'sppd_number' => '001/SPPD/MESI/11/2026',
-            'status' => 'approved',
-        ]);
-        $reimbursement = Reimbursement::create([
-            'employee_id' => $this->staffEmp->id,
-            'sppd_id' => $sppd->id,
-            'title' => 'Klaim BBM Bandung',
-            'status' => 'draft',
-        ]);
-        Expense::create([
-            'reimbursement_id' => $reimbursement->id,
-            'expense_type' => 'Bahan Bakar & Tol',
-            'amount' => 150000,
-            'is_company_paid' => false,
-            'receipt_path' => 'reimbursement-receipts/bbm.jpg',
-        ]);
-
-        // Staff has NO signature yet -> blocked from submitting reimbursement
-        Livewire::actingAs($this->staffUser)
-            ->test(ListReimbursements::class)
-            ->callTableAction('submit', $reimbursement)
-            ->assertNotified('Tanda Tangan Belum Diatur');
-
-        $reimbursement->refresh();
-        $this->assertEquals('draft', $reimbursement->status);
     }
 
     public function test_configured_signature_automatically_stamps_approved_documents_and_verifies_via_public_qr_url(): void

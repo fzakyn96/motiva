@@ -11,7 +11,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password', 'signature_type', 'signature_data', 'signature_path', 'signature_updated_at'])]
+#[Fillable(['name', 'username', 'email', 'password', 'signature_type', 'signature_data', 'signature_path', 'signature_updated_at'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -58,6 +58,19 @@ class User extends Authenticatable
         }
 
         return false;
+    }
+
+    /**
+     * Resolve human-readable label for the user's configured signature method.
+     */
+    public function getSignatureMethodLabel(): string
+    {
+        return match ($this->signature_type) {
+            'draw' => 'Gambar Langsung',
+            'upload' => 'Unggah Gambar',
+            'qrcode' => 'QR Code Verifikasi',
+            default => 'Belum Diatur',
+        };
     }
 
     /**
