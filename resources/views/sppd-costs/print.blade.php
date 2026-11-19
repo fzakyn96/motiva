@@ -159,7 +159,7 @@
                     PEKERJA PENEMPATAN PT PERMATA KARYA JASA
                     <div style="font-size: 10px; font-weight: normal; margin-top: 3px;">
                         @if($sppd?->sppd_number)
-                            Nomor SPPD: {{ $sppd->sppd_number }}
+                            {{ $sppd->sppd_number }}
                         @else
                             <em>Nomor dokumen belum terbit</em>
                         @endif

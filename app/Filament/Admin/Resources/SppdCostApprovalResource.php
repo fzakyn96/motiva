@@ -32,8 +32,14 @@ class SppdCostApprovalResource extends Resource
     public static function canViewAny(): bool
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user) {
+            return false;
+        }
+        if ($user->employee?->isBusinessDivisionHead() && ! $user->hasAnyRole(['Superadmin', 'Admin'])) {
+            return false;
+        }
 
-        return $user !== null && $user->hasAnyRole(['Superadmin', 'Admin', 'Manager']);
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'Manager']);
     }
 
     public static function canCreate(): bool
@@ -53,7 +59,9 @@ class SppdCostApprovalResource extends Resource
 
     public static function getNavigationBadge(): ?string
     {
-        return RecapTableSupport::pendingApprovalBadge(SppdCost::class);
+        $count = static::getEloquentQuery()->where('status', 'pending')->count();
+
+        return $count > 0 ? (string) $count : null;
     }
 
     public static function getNavigationBadgeColor(): ?string
@@ -63,10 +71,27 @@ class SppdCostApprovalResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->where('document_type', SppdCost::class)
+            ->whereIn('document_id', SppdCost::select('id'))
             ->with(['document.sppd.employee.position', 'document.sppd.businessTrip', 'steps.policyStep'])
             ->latest('id');
+
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user || $user->hasAnyRole(['Superadmin', 'Admin'])) {
+            return $query;
+        }
+
+        $employee = $user->employee;
+        if ($employee && $employee->work_area_id) {
+            $query->whereHasMorph('document', [SppdCost::class], function (Builder $costQuery) use ($employee) {
+                $costQuery->whereHas('sppd.employee', function (Builder $empQuery) use ($employee) {
+                    $empQuery->where('work_area_id', $employee->work_area_id);
+                });
+            });
+        }
+
+        return $query;
     }
 
     public static function table(Table $table): Table

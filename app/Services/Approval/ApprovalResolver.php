@@ -65,6 +65,7 @@ class ApprovalResolver
             if ($request->document && $approver->user && $approver->user->hasConfiguredSignature()) {
                 $resolverClass = $currentStep->policyStep?->resolver_class;
                 $roleType = match ($resolverClass) {
+                    \App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver::class => 'requester',
                     \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class => 'division_head',
                     \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class => 'manager',
                     \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class => 'supervisor',

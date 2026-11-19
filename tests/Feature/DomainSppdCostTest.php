@@ -385,12 +385,23 @@ class DomainSppdCostTest extends TestCase
             ->callAction('sync_monthly_recap', data: ['month' => 11, 'year' => 2026])
             ->assertHasNoActionErrors();
 
-        $recap = \App\Models\OfficialTravelRecap::where('period_month', '2026-11')->firstOrFail();
+        $recap = \App\Models\OfficialTravelRecap::where('period_month', 'November')->where('period_label', 'November 2026')->firstOrFail();
+        $this->assertSame('Pekerjaan ' . $dept->name, $recap->work_name);
+        $this->assertSame('November', $recap->period_month);
+        $this->assertSame('November 2026', $recap->period_label);
         $this->assertCount(2, $recap->items);
         $this->assertEquals((float) $cost1->total_cost + (float) $cost2->total_cost, (float) $recap->total_work_cost);
 
-        // Calling sync multiple times (even if legacy period_month was month name) must NOT duplicate recaps
-        $recap->update(['period_month' => 'November']);
+        // Verify EditOfficialTravelRecap hides Nama Pekerjaan, Bulan Periode (Kolom Tabel), Judul Periode, and shows Unit Kerja + Management Fee
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\EditOfficialTravelRecap::class, ['record' => $recap->id])
+            ->assertSuccessful()
+            ->assertDontSee('Nama Pekerjaan')
+            ->assertDontSee('Bulan Periode (Kolom Tabel)')
+            ->assertDontSee('Judul Periode')
+            ->assertSee('Unit Kerja')
+            ->assertSee('Persentase Management Fee (%)');
+
+        // Calling sync multiple times must NOT duplicate recaps
         Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ListOfficialTravelRecaps::class)
             ->callAction('sync_monthly_recap', data: ['month' => 11, 'year' => 2026])
             ->assertHasNoActionErrors();
@@ -428,7 +439,8 @@ class DomainSppdCostTest extends TestCase
             ->callAction('sync_monthly_recap', data: ['sync_all_months' => true])
             ->assertHasNoActionErrors();
 
-        $oldRecap = \App\Models\OfficialTravelRecap::where('period_month', '2026-09')->firstOrFail();
+        $oldRecap = \App\Models\OfficialTravelRecap::where('period_month', 'September')->where('period_label', 'September 2026')->firstOrFail();
+        $this->assertSame('Pekerjaan ' . $dept->name, $oldRecap->work_name);
         $this->assertCount(1, $oldRecap->items);
         $this->assertEquals(360000, (float) $oldRecap->total_work_cost);
     }

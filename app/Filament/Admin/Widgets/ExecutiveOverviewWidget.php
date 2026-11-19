@@ -39,9 +39,10 @@ class ExecutiveOverviewWidget extends BaseWidget
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
-        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']);
+        $isBusinessDivisionHead = (bool) $employee?->isBusinessDivisionHead();
+        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']) || $isBusinessDivisionHead;
         $isHrOrAdmin = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
-        $isDivisionHeadOnly = $user?->hasRole('Division Head') && ! $user->hasAnyRole(['Manager', 'Superadmin', 'Admin', 'HR']);
+        $isDivisionHeadOnly = (($user?->hasRole('Division Head') ?? false) || $isBusinessDivisionHead) && ! $user?->hasAnyRole(['Superadmin', 'Admin', 'HR']);
         $isSupervisorOnly = $user?->hasRole('Supervisor') && ! $user->hasAnyRole(['Manager', 'Division Head', 'Superadmin', 'Admin', 'HR']);
 
         // 1. Pending Approvals
@@ -55,40 +56,65 @@ class ExecutiveOverviewWidget extends BaseWidget
         $pendingTravel = ApprovalRequest::where('document_type', OfficialTravelRecap::class)->where('status', 'pending');
 
         if (! $isAllAccess && $employee) {
-            $filterByEmp = function (Builder $query, string $docClass) use ($employee) {
-                $query->whereHasMorph('document', [$docClass], function (Builder $q) use ($employee) {
-                    $q->whereHas('employee', function (Builder $eq) use ($employee) {
+            if ($employee->work_area_id) {
+                $pendingMemo->where(function (Builder $q) use ($employee) {
+                    $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                        ->orWhereHasMorph('document', [Memo::class], fn (Builder $mq) => $mq->whereHas('creator', fn (Builder $cq) => $cq->where('work_area_id', $employee->work_area_id)));
+                });
+
+                $pendingSppd->whereHasMorph('document', [Sppd::class], function (Builder $q) use ($employee) {
+                    $q->whereHas('employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id));
+                });
+
+                $pendingSppdCost->whereHasMorph('document', [SppdCost::class], function (Builder $q) use ($employee) {
+                    $q->whereHas('sppd.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id));
+                });
+
+                $pendingTransport->where(function (Builder $q) use ($employee) {
+                    $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                        ->orWhereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
+                });
+
+                $pendingTravel->where(function (Builder $q) use ($employee) {
+                    $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                        ->orWhereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
+                });
+            } else {
+                $filterByEmp = function (Builder $query, string $docClass) use ($employee) {
+                    $query->whereHasMorph('document', [$docClass], function (Builder $q) use ($employee) {
+                        $q->whereHas('employee', function (Builder $eq) use ($employee) {
+                            $eq->where('department_id', $employee->department_id)
+                                ->orWhere('manager_id', $employee->id)
+                                ->orWhere('id', $employee->id);
+                        });
+                    });
+                };
+
+                $filterMemoByEmp = function (Builder $query) use ($employee) {
+                    $query->whereHasMorph('document', [Memo::class], function (Builder $q) use ($employee) {
+                        $q->where('department_id', $employee->department_id)
+                            ->orWhere('creator_employee_id', $employee->id)
+                            ->orWhereHas('creator', function (Builder $cq) use ($employee) {
+                                $cq->where('manager_id', $employee->id);
+                            });
+                    });
+                };
+
+                $filterMemoByEmp($pendingMemo);
+                $filterByEmp($pendingSppd, Sppd::class);
+
+                $pendingSppdCost->whereHasMorph('document', [SppdCost::class], function (Builder $q) use ($employee) {
+                    $q->whereHas('sppd.employee', function (Builder $eq) use ($employee) {
                         $eq->where('department_id', $employee->department_id)
                             ->orWhere('manager_id', $employee->id)
                             ->orWhere('id', $employee->id);
                     });
                 });
-            };
 
-            $filterMemoByEmp = function (Builder $query) use ($employee) {
-                $query->whereHasMorph('document', [Memo::class], function (Builder $q) use ($employee) {
-                    $q->where('department_id', $employee->department_id)
-                        ->orWhere('creator_employee_id', $employee->id)
-                        ->orWhereHas('creator', function (Builder $cq) use ($employee) {
-                            $cq->where('manager_id', $employee->id);
-                        });
-                });
-            };
-
-            $filterMemoByEmp($pendingMemo);
-            $filterByEmp($pendingSppd, Sppd::class);
-
-            $pendingSppdCost->whereHasMorph('document', [SppdCost::class], function (Builder $q) use ($employee) {
-                $q->whereHas('sppd.employee', function (Builder $eq) use ($employee) {
-                    $eq->where('department_id', $employee->department_id)
-                        ->orWhere('manager_id', $employee->id)
-                        ->orWhere('id', $employee->id);
-                });
-            });
-
-            if ($employee->department_id) {
-                $pendingTransport->whereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $q) => $q->where('department_id', $employee->department_id));
-                $pendingTravel->whereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $q) => $q->where('department_id', $employee->department_id));
+                if ($employee->department_id) {
+                    $pendingTransport->whereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $q) => $q->where('department_id', $employee->department_id));
+                    $pendingTravel->whereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $q) => $q->where('department_id', $employee->department_id));
+                }
             }
         }
 
@@ -109,9 +135,13 @@ class ExecutiveOverviewWidget extends BaseWidget
         $sppdQuery = Sppd::query();
         if (! $isAllAccess && $employee) {
             $sppdQuery->whereHas('employee', function (Builder $q) use ($employee) {
-                $q->where('department_id', $employee->department_id)
-                    ->orWhere('manager_id', $employee->id)
-                    ->orWhere('id', $employee->id);
+                if ($employee->work_area_id) {
+                    $q->where('work_area_id', $employee->work_area_id);
+                } else {
+                    $q->where('department_id', $employee->department_id)
+                        ->orWhere('manager_id', $employee->id)
+                        ->orWhere('id', $employee->id);
+                }
             });
         }
         $approvedSppdCount = (clone $sppdQuery)->where('status', 'approved')->count();
@@ -124,9 +154,13 @@ class ExecutiveOverviewWidget extends BaseWidget
             $q->where('status', 'approved');
             if (! $isAllAccess && $employee) {
                 $q->whereHas('employee', function (Builder $eq) use ($employee) {
-                    $eq->where('department_id', $employee->department_id)
-                        ->orWhere('manager_id', $employee->id)
-                        ->orWhere('id', $employee->id);
+                    if ($employee->work_area_id) {
+                        $eq->where('work_area_id', $employee->work_area_id);
+                    } else {
+                        $eq->where('department_id', $employee->department_id)
+                            ->orWhere('manager_id', $employee->id)
+                            ->orWhere('id', $employee->id);
+                    }
                 });
             }
         });

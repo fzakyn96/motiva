@@ -26,6 +26,11 @@
         <x-slot name="heading">
             <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;">
                 <span style="margin-right: 0.25rem;">Dokumen SPPD: <span class="font-mono">{{ $record->sppd_number }}</span></span>
+                @if ($record->businessTrip?->memo?->nomor_memo)
+                    <x-filament::badge color="info" icon="heroicon-m-document-text" size="md">
+                        No. Memo: {{ $record->businessTrip->memo->nomor_memo }}
+                    </x-filament::badge>
+                @endif
                 <x-filament::badge color="success" icon="heroicon-m-check-circle" size="md">
                     SPPD Disetujui Manajer
                 </x-filament::badge>

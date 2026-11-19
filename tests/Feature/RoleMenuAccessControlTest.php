@@ -13,7 +13,6 @@ use App\Filament\Admin\Resources\MemoLogResource;
 use App\Filament\Admin\Resources\MemoResource;
 use App\Filament\Admin\Resources\PermissionResource;
 use App\Filament\Admin\Resources\PositionResource;
-use App\Filament\Admin\Resources\ReimbursementLogResource;
 use App\Filament\Admin\Resources\RoleResource;
 use App\Filament\Admin\Resources\SppdApprovalResource;
 use App\Filament\Admin\Resources\SppdCostLogResource;
@@ -241,8 +240,6 @@ class RoleMenuAccessControlTest extends TestCase
         $this->assertSame(2, SppdLogResource::getNavigationSort());
         $this->assertSame('Log', SppdCostLogResource::getNavigationGroup());
         $this->assertSame(3, SppdCostLogResource::getNavigationSort());
-        $this->assertSame('Log', ReimbursementLogResource::getNavigationGroup());
-        $this->assertSame(4, ReimbursementLogResource::getNavigationSort());
 
         // 5. Grup Data Pegawai & Hak Akses & Pengguna (collapsed navigation groups)
         $this->assertSame('Data Pegawai', EmployeeResource::getNavigationGroup());

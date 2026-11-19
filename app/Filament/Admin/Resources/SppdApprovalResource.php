@@ -28,6 +28,9 @@ class SppdApprovalResource extends Resource
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         if (! $user) return false;
+        if ($user->employee?->isBusinessDivisionHead() && ! $user->hasAnyRole(['Superadmin', 'Admin'])) {
+            return false;
+        }
         return $user->hasAnyRole(['Superadmin', 'Admin', 'Manager', 'Supervisor']);
     }
 
@@ -80,6 +83,12 @@ class SppdApprovalResource extends Resource
     {
         if ($record->status !== 'pending') {
             return false;
+        }
+
+        $user = $user ?? (\Filament\Facades\Filament::auth()->user() ?? auth()->user());
+        $employee = $user?->employee;
+        if ($employee && ! $user?->hasAnyRole(['Superadmin', 'Admin'])) {
+            return (new \App\Services\Approval\ApprovalResolver())->canApprove($record, $employee);
         }
 
         if (! static::isSupervisorOnly($user)) {
@@ -161,6 +170,14 @@ class SppdApprovalResource extends Resource
         $employee = $user->employee;
         if (! $employee) {
             return $query;
+        }
+
+        if ($employee->work_area_id) {
+            return $query->whereHasMorph('document', [Sppd::class], function (Builder $sppdQuery) use ($employee) {
+                $sppdQuery->whereHas('employee', function (Builder $empQuery) use ($employee) {
+                    $empQuery->where('work_area_id', $employee->work_area_id);
+                });
+            });
         }
 
         // Supervisor & Manager can view SPPD approvals:

@@ -58,6 +58,8 @@ class DocumentSignature extends Model
             Sppd::class => 'Surat Perintah Perjalanan Dinas (SPPD)',
             Reimbursement::class => 'Formulir Penggantian Biaya (Reimbursement)',
             SppdCost::class => 'Formulir Perhitungan Biaya SPPD',
+            TransportAccommodationRecap::class => 'Rekapitulasi Biaya Tiket & Akomodasi',
+            OfficialTravelRecap::class => 'Rekapitulasi Biaya Perjalanan Dinas',
             default => class_basename($this->document_type),
         };
     }
@@ -65,9 +67,12 @@ class DocumentSignature extends Model
     public function getRoleLabelAttribute(): string
     {
         return match ($this->role_type) {
-            'manager' => 'Pejabat Penyetuju (Manajer)',
+            'division_head' => 'Pejabat Penyetuju (Division Head)',
+            'manager' => 'Pejabat Pemeriksa / Penyetuju (Manajer)',
             'supervisor' => 'Pemeriksa (Supervisor)',
-            'requester' => 'Pegawai Pengaju',
+            'requester' => in_array($this->document_type, [TransportAccommodationRecap::class, OfficialTravelRecap::class], true)
+                ? 'Pejabat Penyusun (Business Division Head)'
+                : 'Pegawai Pengaju',
             'authorizer' => 'Pejabat Pemberi Perintah',
             default => 'Penandatangan',
         };

@@ -13,4 +13,5 @@ Route::get('/recaps/transport/{recap}/print', [\App\Http\Controllers\RecapPrintC
 Route::get('/recaps/travel/{recap}/print', [\App\Http\Controllers\RecapPrintController::class, 'travel'])->name('recaps.travel.print')->middleware('auth');
 Route::get('/attachments/{path}', [\App\Http\Controllers\RecapPrintController::class, 'attachment'])->where('path', '.*')->name('attachments.show')->middleware('auth');
 Route::get('/verify-signature/{token}', \App\Http\Controllers\SignatureVerificationController::class)->name('signatures.verify');
+Route::get('/verify-signature/{token}/download', [\App\Http\Controllers\SignatureVerificationController::class, 'download'])->name('signatures.download');
 

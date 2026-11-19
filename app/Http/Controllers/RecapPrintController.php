@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\OfficialTravelRecap;
 use App\Models\TransportAccommodationRecap;
+use App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver;
 use App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver;
 use App\Services\Approval\Resolvers\ManagerAuthorityResolver;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -42,6 +43,7 @@ class RecapPrintController extends Controller
                 'grand_total' => (float) $recap->grand_total,
             ],
             'signatories' => $signatories,
+            'step0Approved' => $approvalFlags['step0Approved'],
             'step1Approved' => $approvalFlags['step1Approved'],
             'step2Approved' => $approvalFlags['step2Approved'],
             'periodMonth' => $recap->period_month,
@@ -76,6 +78,7 @@ class RecapPrintController extends Controller
                 'grand_total' => (float) $recap->grand_total,
             ],
             'signatories' => $signatories,
+            'step0Approved' => $approvalFlags['step0Approved'],
             'step1Approved' => $approvalFlags['step1Approved'],
             'step2Approved' => $approvalFlags['step2Approved'],
             'periodMonth' => $recap->period_month,
@@ -87,19 +90,24 @@ class RecapPrintController extends Controller
     }
 
     /**
-     * @return array{step1Approved: bool, step2Approved: bool}
+     * @return array{step0Approved: bool, step1Approved: bool, step2Approved: bool}
      */
     protected function resolveApprovalFlags(Model $document): array
     {
         $req = $document->approvalRequests()->with('steps.policyStep')->latest('id')->first();
         if (! $req) {
-            return ['step1Approved' => false, 'step2Approved' => false];
+            return ['step0Approved' => false, 'step1Approved' => false, 'step2Approved' => false];
         }
 
+        $hasBdhStep = $req->steps->contains(fn ($s) => $s->policyStep?->resolver_class === BusinessDivisionHeadAuthorityResolver::class);
+        $step0Approved = $hasBdhStep
+            ? $req->steps->contains(fn ($s) => $s->status === 'approved' && $s->policyStep?->resolver_class === BusinessDivisionHeadAuthorityResolver::class)
+            : true;
         $step1Approved = $req->steps->contains(fn ($s) => $s->status === 'approved' && $s->policyStep?->resolver_class === ManagerAuthorityResolver::class);
         $step2Approved = $req->steps->contains(fn ($s) => $s->status === 'approved' && $s->policyStep?->resolver_class === DivisionHeadAuthorityResolver::class);
 
         return [
+            'step0Approved' => $step0Approved,
             'step1Approved' => $step1Approved,
             'step2Approved' => $step2Approved,
         ];

@@ -19,7 +19,7 @@ class ReimbursementSettingsPage extends Page implements HasForms
 
     protected static ?string $navigationLabel = 'Pengaturan Fee Rekap';
 
-    protected static ?string $title = 'Pengaturan Service Fee & Management Fee';
+    protected static ?string $title = 'Pengaturan Management Fee';
 
     protected static ?string $slug = 'reimbursement-settings';
 
@@ -58,25 +58,25 @@ class ReimbursementSettingsPage extends Page implements HasForms
                 Section::make('Persentase Management Fee (Manfee)')
                     ->icon('heroicon-o-percent-badge')
                     ->iconColor('primary')
-                    ->description('Atur persentase default Management Fee untuk Rekap Tiket & Akomodasi serta Rekap Perjalanan Dinas.')
+                    ->description('Atur batas persentase tertinggi (maksimal) Management Fee untuk Rekap Tiket & Akomodasi serta Rekap Perjalanan Dinas. Pada halaman rekap, nilai ini menjadi nilai default dan masih dapat disesuaikan lebih kecil, namun tidak boleh melebihi batas ini.')
                     ->schema([
                         TextInput::make('transport_manfee_percent')
-                            ->label('Manfee Tiket & Akomodasi (%)')
+                            ->label('Batas Maksimal Management Fee Tiket & Akomodasi (%)')
                             ->numeric()
                             ->step('0.01')
                             ->minValue(0)
                             ->maxValue(100)
                             ->suffix('%')
-                            ->helperText('Default 5% dari Total Biaya pada Rekap Tiket & Akomodasi.')
+                            ->helperText('Persentase tertinggi (default 5%) dari Total Biaya pada Rekap Tiket & Akomodasi.')
                             ->required(),
                         TextInput::make('travel_manfee_percent')
-                            ->label('Management Fee Perjalanan Dinas (%)')
+                            ->label('Batas Maksimal Management Fee Perjalanan Dinas (%)')
                             ->numeric()
                             ->step('0.01')
                             ->minValue(0)
                             ->maxValue(100)
                             ->suffix('%')
-                            ->helperText('Default 6% dari Total Biaya Pekerjaan pada Rekap Perjalanan Dinas.')
+                            ->helperText('Persentase tertinggi (default 6%) dari Total Biaya Pekerjaan pada Rekap Perjalanan Dinas.')
                             ->required(),
                     ])
                     ->columns(['default' => 1, 'md' => 2]),

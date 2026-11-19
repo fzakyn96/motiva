@@ -57,34 +57,46 @@ class ReviewMemo extends ViewRecord
             return true;
         }
 
-        // If user is a Manager or has approve_memo permission
-        if ($user->hasRole('Manager') || $user->can('approve_memo')) {
-            return true;
-        }
-
         $employee = $user->employee;
-        if (! $employee) {
-            return false;
-        }
 
         $request = ApprovalRequest::where('document_type', Memo::class)
             ->where('document_id', $memo->id)
             ->first();
 
-        if (! $request) {
+        if ($employee && $request) {
+            if ($request->status !== 'pending') {
+                return false;
+            }
+
+            return (new ApprovalResolver())->canApprove($request, $employee);
+        }
+
+        if ($employee && $employee->work_area_id && $memo->creator?->work_area_id) {
+            if ((int) $employee->work_area_id !== (int) $memo->creator->work_area_id) {
+                return false;
+            }
+        }
+
+        // Fallback if user has no employee record attached in minimal test fixtures
+        if ($user->hasRole('Manager') || $user->can('approve_memo')) {
             return true;
         }
 
-        if ($request->status !== 'pending') {
-            return false;
-        }
-
-        $resolver = new ApprovalResolver();
-        return $resolver->canApprove($request, $employee);
+        return false;
     }
 
     public function approveMemo(): void
     {
+        if (! $this->canPerformApproval()) {
+            Notification::make()
+                ->title('Akses Ditolak')
+                ->body('Anda hanya dapat menyetujui Memo dari area kerja yang sama.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         /** @var Memo $memo */
         $memo = $this->getRecord();
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
@@ -158,6 +170,16 @@ class ReviewMemo extends ViewRecord
 
     public function rejectMemo(string $notes): void
     {
+        if (! $this->canPerformApproval()) {
+            Notification::make()
+                ->title('Akses Ditolak')
+                ->body('Anda hanya dapat menolak Memo dari area kerja yang sama.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         /** @var Memo $memo */
         $memo = $this->getRecord();
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();

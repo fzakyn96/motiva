@@ -109,6 +109,24 @@ class TransportAccommodationRecap extends Model
                 $recap->approved_by_position = $sig['approved_by']->position?->name ?? 'Division Head';
             }
         });
+
+        static::deleting(function (TransportAccommodationRecap $recap): void {
+            $recap->items()->delete();
+
+            ApprovalRequest::where('document_type', static::class)
+                ->where('document_id', $recap->id)
+                ->get()
+                ->each(function (ApprovalRequest $req): void {
+                    $req->steps()->delete();
+                    $req->delete();
+                });
+
+            if (\Illuminate\Support\Facades\Schema::hasTable('document_signatures')) {
+                DocumentSignature::where('document_type', static::class)
+                    ->where('document_id', $recap->id)
+                    ->delete();
+            }
+        });
     }
 
     public function department(): BelongsTo
@@ -158,7 +176,9 @@ class TransportAccommodationRecap extends Model
             $totalCost += $itemTotal;
         }
 
-        $percent = (float) ($this->manfee_percent ?? ReimbursementSetting::current()->transport_manfee_percent);
+        $maxPercent = (float) ReimbursementSetting::current()->transport_manfee_percent;
+        $rawPercent = (float) ($this->manfee_percent ?? $maxPercent);
+        $percent = max(0.0, min($rawPercent, $maxPercent));
         $manfeeAmount = round($totalCost * ($percent / 100), 0);
 
         $this->subtotal_amount = $subtotalAmount;

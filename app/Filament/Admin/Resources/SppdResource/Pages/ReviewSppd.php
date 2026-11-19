@@ -126,6 +126,16 @@ class ReviewSppd extends ViewRecord
 
     public function approveSppd(?string $notes = null): void
     {
+        if (! $this->canPerformApproval()) {
+            Notification::make()
+                ->title('Akses Ditolak')
+                ->body('Anda hanya dapat menyetujui SPPD dari area kerja yang sama.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         /** @var Sppd $sppd */
         $sppd = $this->getRecord();
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
@@ -216,6 +226,16 @@ class ReviewSppd extends ViewRecord
 
     public function rejectSppd(string $notes): void
     {
+        if (! $this->canPerformApproval()) {
+            Notification::make()
+                ->title('Akses Ditolak')
+                ->body('Anda hanya dapat menolak SPPD dari area kerja yang sama.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         /** @var Sppd $sppd */
         $sppd = $this->getRecord();
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();

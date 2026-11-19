@@ -36,10 +36,12 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
+        $isBusinessDivisionHead = (bool) $employee?->isBusinessDivisionHead();
         $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR']);
-        $isDivisionHeadOnly = $user?->hasRole('Division Head') && ! $user->hasAnyRole(['Manager', 'Superadmin', 'Admin', 'HR']);
+        $isDivisionHeadOnly = (($user?->hasRole('Division Head') ?? false) || $isBusinessDivisionHead) && ! $user?->hasAnyRole(['Superadmin', 'Admin', 'HR']);
 
         $query = ApprovalRequest::query()
+            ->with(['document', 'requester.position', 'requester.workArea', 'requester.department', 'steps.policyStep'])
             ->where('status', 'pending')
             ->latest('id');
 
@@ -54,9 +56,13 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                 \App\Filament\Admin\Resources\SppdApprovalResource::applyActionablePendingScope($query, $user);
                 $query->whereHasMorph('document', [Sppd::class], function (Builder $sq) use ($employee) {
                     $sq->whereHas('employee', function ($eq) use ($employee) {
-                        $eq->where('department_id', $employee->department_id)
-                            ->orWhere('manager_id', $employee->id)
-                            ->orWhere('id', $employee->id);
+                        if ($employee->work_area_id) {
+                            $eq->where('work_area_id', $employee->work_area_id);
+                        } else {
+                            $eq->where('department_id', $employee->department_id)
+                                ->orWhere('manager_id', $employee->id)
+                                ->orWhere('id', $employee->id);
+                        }
                     });
                 });
             } else {
@@ -65,9 +71,13 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                     $q->where(function (Builder $sub) use ($employee) {
                         $sub->where('document_type', Memo::class)
                             ->whereHasMorph('document', [Memo::class], function (Builder $mq) use ($employee) {
-                                $mq->where('department_id', $employee->department_id)
-                                    ->orWhere('creator_employee_id', $employee->id)
-                                    ->orWhereHas('creator', fn ($cq) => $cq->where('manager_id', $employee->id));
+                                if ($employee->work_area_id) {
+                                    $mq->whereHas('creator', fn ($cq) => $cq->where('work_area_id', $employee->work_area_id));
+                                } else {
+                                    $mq->where('department_id', $employee->department_id)
+                                        ->orWhere('creator_employee_id', $employee->id)
+                                        ->orWhereHas('creator', fn ($cq) => $cq->where('manager_id', $employee->id));
+                                }
                             });
                     })
                     // 2. SPPD
@@ -75,9 +85,13 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                         $sub->where('document_type', Sppd::class)
                             ->whereHasMorph('document', [Sppd::class], function (Builder $sq) use ($employee) {
                                 $sq->whereHas('employee', function ($eq) use ($employee) {
-                                    $eq->where('department_id', $employee->department_id)
-                                        ->orWhere('manager_id', $employee->id)
-                                        ->orWhere('id', $employee->id);
+                                    if ($employee->work_area_id) {
+                                        $eq->where('work_area_id', $employee->work_area_id);
+                                    } else {
+                                        $eq->where('department_id', $employee->department_id)
+                                            ->orWhere('manager_id', $employee->id)
+                                            ->orWhere('id', $employee->id);
+                                    }
                                 });
                             });
                     })
@@ -86,21 +100,35 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                         $sub->where('document_type', SppdCost::class)
                             ->whereHasMorph('document', [SppdCost::class], function (Builder $cq) use ($employee) {
                                 $cq->whereHas('sppd.employee', function ($eq) use ($employee) {
-                                    $eq->where('department_id', $employee->department_id)
-                                        ->orWhere('manager_id', $employee->id)
-                                        ->orWhere('id', $employee->id);
+                                    if ($employee->work_area_id) {
+                                        $eq->where('work_area_id', $employee->work_area_id);
+                                    } else {
+                                        $eq->where('department_id', $employee->department_id)
+                                            ->orWhere('manager_id', $employee->id)
+                                            ->orWhere('id', $employee->id);
+                                    }
                                 });
                             });
                     })
                     // 4. Rekap Tiket & Akomodasi
                     ->orWhere(function (Builder $sub) use ($employee) {
                         $sub->where('document_type', TransportAccommodationRecap::class)
-                            ->when($employee->department_id, fn (Builder $q2) => $q2->whereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $rq) => $rq->where('department_id', $employee->department_id)));
+                            ->when($employee->work_area_id, function (Builder $q2) use ($employee) {
+                                $q2->where(function (Builder $wq) use ($employee) {
+                                    $wq->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                                        ->orWhereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
+                                });
+                            }, fn (Builder $q2) => $q2->when($employee->department_id, fn (Builder $q3) => $q3->whereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $rq) => $rq->where('department_id', $employee->department_id))));
                     })
-                    // 4. Rekap Perjalanan Dinas
+                    // 5. Rekap Perjalanan Dinas
                     ->orWhere(function (Builder $sub) use ($employee) {
                         $sub->where('document_type', OfficialTravelRecap::class)
-                            ->when($employee->department_id, fn (Builder $q2) => $q2->whereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $rq) => $rq->where('department_id', $employee->department_id)));
+                            ->when($employee->work_area_id, function (Builder $q2) use ($employee) {
+                                $q2->where(function (Builder $wq) use ($employee) {
+                                    $wq->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                                        ->orWhereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
+                                });
+                            }, fn (Builder $q2) => $q2->when($employee->department_id, fn (Builder $q3) => $q3->whereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $rq) => $rq->where('department_id', $employee->department_id))));
                     });
                 });
             }
@@ -169,31 +197,47 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('requester.name')
-                    ->label('Pengaju')
+                    ->label('Pengaju & Area Kerja')
                     ->formatStateUsing(function (ApprovalRequest $record) {
                         $req = $record->requester;
                         if (! $req) return '-';
+                        $area = $req->workArea?->name ? ('Area ' . $req->workArea->name) : ($req->department?->code ?? $req->department?->name);
                         $pos = $req->position?->name;
-                        $dept = $req->department?->code ?? $req->department?->name;
-                        $extra = array_filter([$pos, $dept]);
-                        return ! empty($extra) ? "{$req->name} (" . implode(', ', $extra) . ")" : $req->name;
+                        $extra = array_filter([$pos, $area]);
+                        return ! empty($extra) ? "{$req->name} (" . implode(' • ', $extra) . ")" : $req->name;
                     }),
 
                 Tables\Columns\TextColumn::make('current_step')
                     ->label('Tahap Verifikasi')
                     ->badge()
-                    ->formatStateUsing(function (ApprovalRequest $record): string {
+                    ->state(function (ApprovalRequest $record): string {
+                        $resolverClass = $record->currentStep()?->policyStep?->resolver_class;
+
+                        if ($resolverClass === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class) {
+                            return 'Tahap 1 • Supervisor';
+                        }
+                        if ($resolverClass === \App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver::class) {
+                            return 'Tahap 2 • Division Head Perkasa';
+                        }
+                        if ($resolverClass === \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class) {
+                            return 'Tahap 3 • Division Head PGN';
+                        }
+                        if (in_array($record->document_type, [TransportAccommodationRecap::class, OfficialTravelRecap::class], true)) {
+                            return 'Tahap 1 • Pemeriksaan Manajer';
+                        }
                         if ($record->document_type === Sppd::class) {
-                            return ((int) $record->current_step <= 1)
-                                ? 'Tahap 1 • Supervisor'
-                                : 'Tahap 2 • Manajer';
+                            return 'Tahap 2 • Manajer';
                         }
 
                         return 'Otorisasi Manajer';
                     })
                     ->color(function (ApprovalRequest $record): string {
-                        if ($record->document_type === Sppd::class && (int) $record->current_step <= 1) {
+                        $resolverClass = $record->currentStep()?->policyStep?->resolver_class;
+                        if ($resolverClass === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class) {
                             return 'info';
+                        }
+                        if ($resolverClass === \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class) {
+                            return 'success';
                         }
 
                         return 'warning';

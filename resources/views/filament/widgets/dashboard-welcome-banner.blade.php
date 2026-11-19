@@ -19,8 +19,20 @@
 
                 <div class="flex flex-wrap items-center" style="gap: 0.5rem;">
                     <x-filament::badge color="primary" size="sm" icon="heroicon-m-shield-check">
-                        {{ $roles ?: 'User' }}
+                        {{ !empty($d['isBusinessDivisionHead']) ? 'Business Division Head (Perkasa)' : ($roles ?: 'User') }}
                     </x-filament::badge>
+
+                    @if ($employee?->organization)
+                        <x-filament::badge color="gray" size="sm" icon="heroicon-m-building-library">
+                            {{ $employee->organization->name }}
+                        </x-filament::badge>
+                    @endif
+
+                    @if ($employee?->workArea)
+                        <x-filament::badge color="success" size="sm" icon="heroicon-m-map-pin">
+                            Area Kerja {{ $employee->workArea->name }}
+                        </x-filament::badge>
+                    @endif
 
                     @if ($employee?->department)
                         <x-filament::badge color="info" size="sm" icon="heroicon-m-building-office-2">

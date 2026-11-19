@@ -74,11 +74,27 @@ class EmployeeResource extends Resource
 
                         Forms\Components\Fieldset::make('Penempatan Organisasi & Akun Sistem')
                             ->schema([
+                                Forms\Components\Select::make('organization_id')
+                                    ->label('Perusahaan (PGN / Perkasa)')
+                                    ->prefixIcon('heroicon-m-building-library')
+                                    ->relationship('organization', 'name')
+                                    ->default(fn () => \App\Models\Organization::where('code', 'PKJ')->value('id') ?? \App\Models\Organization::first()?->id)
+                                    ->required()
+                                    ->searchable()
+                                    ->preload(),
                                 Forms\Components\Select::make('department_id')
                                     ->label('Unit Kerja / Departemen')
                                     ->prefixIcon('heroicon-m-building-office-2')
                                     ->relationship('department', 'name')
+                                    ->default(fn () => \App\Models\Department::where('code', 'MESI')->value('id') ?? \App\Models\Department::first()?->id)
                                     ->required()
+                                    ->searchable()
+                                    ->preload(),
+                                Forms\Components\Select::make('work_area_id')
+                                    ->label('Area Kerja')
+                                    ->prefixIcon('heroicon-m-map-pin')
+                                    ->relationship('workArea', 'name')
+                                    ->placeholder('Pilih Area Kerja')
                                     ->searchable()
                                     ->preload(),
                                 Forms\Components\Select::make('position_id')
@@ -123,15 +139,16 @@ class EmployeeResource extends Resource
                         ->searchable()
                         ->sortable()
                         ->color('gray'),
-                    Tables\Columns\TextColumn::make('department.name')
-                        ->label('Unit Kerja')
+                    Tables\Columns\TextColumn::make('workArea.name')
+                        ->label('Area Kerja')
+                        ->placeholder('MESI')
                         ->badge()
-                        ->color(fn (string $state): string => match ($state) {
-                            'MESI' => 'info',
-                            'Regional 1' => 'success',
+                        ->color(fn (?string $state): string => match ($state) {
+                            'Jakarta' => 'success',
+                            'Regional 1' => 'info',
                             'Regional 2' => 'warning',
                             'Regional 3' => 'primary',
-                            'Jakarta' => 'success',
+                            'Subholding Gas (SHG)' => 'danger',
                             default => 'gray',
                         })
                         ->searchable()
@@ -142,6 +159,16 @@ class EmployeeResource extends Resource
                 Tables\Columns\Layout\Panel::make([
                     Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2, 'md' => 3])
                         ->schema([
+                            Tables\Columns\TextColumn::make('organization.name')
+                                ->description('Perusahaan', position: 'above')
+                                ->placeholder('-')
+                                ->searchable()
+                                ->sortable(),
+                            Tables\Columns\TextColumn::make('department.name')
+                                ->description('Unit Kerja', position: 'above')
+                                ->placeholder('-')
+                                ->searchable()
+                                ->sortable(),
                             Tables\Columns\TextColumn::make('position.name')
                                 ->description('Jabatan', position: 'above')
                                 ->badge()
@@ -153,11 +180,10 @@ class EmployeeResource extends Resource
                                 ->placeholder('-')
                                 ->searchable()
                                 ->sortable(),
-                            Tables\Columns\TextColumn::make('user.username')
-                                ->description('Username', position: 'above')
+                            Tables\Columns\TextColumn::make('workArea.coordinator.name')
+                                ->description('Koordinator Area Kerja', position: 'above')
                                 ->placeholder('-')
-                                ->searchable()
-                                ->sortable(),
+                                ->searchable(),
                             Tables\Columns\TextColumn::make('user.email')
                                 ->description('Email Akun', position: 'above')
                                 ->placeholder('-')
@@ -172,9 +198,15 @@ class EmployeeResource extends Resource
                 ])->collapsible(),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('organization_id')
+                    ->relationship('organization', 'name')
+                    ->label('Perusahaan'),
                 Tables\Filters\SelectFilter::make('department_id')
                     ->relationship('department', 'name')
                     ->label('Unit Kerja'),
+                Tables\Filters\SelectFilter::make('work_area_id')
+                    ->relationship('workArea', 'name')
+                    ->label('Area Kerja'),
                 Tables\Filters\SelectFilter::make('position_id')
                     ->relationship('position', 'name')
                     ->label('Jabatan'),

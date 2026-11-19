@@ -249,6 +249,12 @@ class SignatureSystemTest extends TestCase
         $verifyResponse->assertSee('Manajer Tanpa TTD');
         $verifyResponse->assertSee($memo->nomor_memo);
         $verifyResponse->assertSee('Penugasan Audit Jaringan');
+        $verifyResponse->assertSee('Unduh Dokumen Resmi (PDF)');
+
+        // Public guest can download the verified document PDF directly via the token
+        $downloadResponse = $this->get(route('signatures.download', ['token' => $docSig->token]));
+        $downloadResponse->assertStatus(200);
+        $downloadResponse->assertHeader('Content-Type', 'application/pdf');
 
         // Invalid token shows failure message
         $invalidResponse = $this->get(route('signatures.verify', ['token' => 'token-palsu-tidak-terdaftar']));

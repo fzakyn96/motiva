@@ -10,6 +10,7 @@ class Employee extends Model
         'user_id',
         'organization_id',
         'department_id',
+        'work_area_id',
         'position_id',
         'manager_id',
         'name',
@@ -19,6 +20,11 @@ class Employee extends Model
     protected static function booted(): void
     {
         static::deleting(function (Employee $employee) {
+            // 0. Lepaskan relasi koordinator area kerja
+            if (\Illuminate\Support\Facades\Schema::hasTable('work_areas')) {
+                \App\Models\WorkArea::where('coordinator_employee_id', $employee->id)->update(['coordinator_employee_id' => null]);
+            }
+
             // 1. Lepaskan relasi atasan (manager_id) pada bawahan
             static::where('manager_id', $employee->id)->update(['manager_id' => null]);
 
@@ -77,9 +83,90 @@ class Employee extends Model
         return $this->belongsTo(Department::class);
     }
 
+    public function workArea()
+    {
+        return $this->belongsTo(WorkArea::class, 'work_area_id');
+    }
+
     public function position()
     {
         return $this->belongsTo(Position::class);
+    }
+
+    public function isBusinessDivisionHead(): bool
+    {
+        $this->loadMissing('position');
+        if (! $this->position) {
+            return false;
+        }
+
+        $code = strtoupper((string) $this->position->code);
+        $name = strtoupper((string) $this->position->name);
+
+        return in_array($code, ['BDH', 'BDH-PKJ'], true) || str_contains($name, 'BUSINESS DIVISION HEAD');
+    }
+
+    public function isSameWorkAreaAsRequest(ApprovalRequest $request): bool
+    {
+        if (! $this->work_area_id) {
+            return true;
+        }
+
+        $areaIds = [];
+        $request->loadMissing(['requester', 'document']);
+        $doc = $request->document;
+
+        if ($doc instanceof Memo) {
+            $doc->loadMissing('creator');
+            if ($doc->creator?->work_area_id) {
+                $areaIds[] = (int) $doc->creator->work_area_id;
+            }
+            if (! empty($doc->participants) && is_array($doc->participants)) {
+                $participantAreas = static::whereIn('id', $doc->participants)
+                    ->whereNotNull('work_area_id')
+                    ->pluck('work_area_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+                $areaIds = array_merge($areaIds, $participantAreas);
+            }
+        } elseif ($doc instanceof Sppd) {
+            $doc->loadMissing('employee');
+            if ($doc->employee?->work_area_id) {
+                $areaIds[] = (int) $doc->employee->work_area_id;
+            }
+        } elseif ($doc instanceof SppdCost) {
+            $doc->loadMissing('sppd.employee');
+            if ($doc->sppd?->employee?->work_area_id) {
+                $areaIds[] = (int) $doc->sppd->employee->work_area_id;
+            }
+        } elseif ($doc instanceof TransportAccommodationRecap || $doc instanceof OfficialTravelRecap) {
+            $tripIds = is_array($doc->business_trip_ids) ? $doc->business_trip_ids : [];
+            if ($doc->business_trip_id && ! in_array($doc->business_trip_id, $tripIds)) {
+                $tripIds[] = $doc->business_trip_id;
+            }
+            if (! empty($tripIds)) {
+                $sppdAreas = Sppd::whereIn('business_trip_id', $tripIds)
+                    ->with('employee')
+                    ->get()
+                    ->pluck('employee.work_area_id')
+                    ->filter()
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+                $areaIds = array_merge($areaIds, $sppdAreas);
+            }
+        }
+
+        if (empty($areaIds) && $request->requester?->work_area_id) {
+            $areaIds[] = (int) $request->requester->work_area_id;
+        }
+
+        $areaIds = array_values(array_unique(array_filter($areaIds)));
+
+        if (empty($areaIds)) {
+            return true;
+        }
+
+        return in_array((int) $this->work_area_id, $areaIds, true);
     }
 
     public function manager()

@@ -49,25 +49,51 @@ class BusinessTrip extends Model
             return $existing;
         }
 
-        $policy = ApprovalPolicy::firstOrCreate(
-            ['model_type' => get_class($document)],
-            ['name' => 'Recap Reimbursement Policy']
-        );
+        $hasBdhApprover = Employee::whereNotNull('user_id')
+            ->whereHas('position', fn ($q) => $q->whereIn('code', ['BDH', 'BDH-PKJ'])->orWhere('name', 'like', '%Business Division Head%'))
+            ->exists();
 
-        ApprovalPolicyStep::firstOrCreate(
-            ['approval_policy_id' => $policy->id, 'step_order' => 1],
-            ['resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class]
-        );
+        if ($hasBdhApprover) {
+            $policy = ApprovalPolicy::firstOrCreate(
+                ['model_type' => get_class($document) . ':3step'],
+                ['name' => 'Recap Reimbursement 3-Step Policy']
+            );
 
-        ApprovalPolicyStep::firstOrCreate(
-            ['approval_policy_id' => $policy->id, 'step_order' => 2],
-            ['resolver_class' => \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class]
-        );
+            ApprovalPolicyStep::updateOrCreate(
+                ['approval_policy_id' => $policy->id, 'step_order' => 1],
+                ['resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class]
+            );
+
+            ApprovalPolicyStep::updateOrCreate(
+                ['approval_policy_id' => $policy->id, 'step_order' => 2],
+                ['resolver_class' => \App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver::class]
+            );
+
+            ApprovalPolicyStep::updateOrCreate(
+                ['approval_policy_id' => $policy->id, 'step_order' => 3],
+                ['resolver_class' => \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class]
+            );
+        } else {
+            $policy = ApprovalPolicy::firstOrCreate(
+                ['model_type' => get_class($document)],
+                ['name' => 'Recap Reimbursement Policy']
+            );
+
+            ApprovalPolicyStep::firstOrCreate(
+                ['approval_policy_id' => $policy->id, 'step_order' => 1],
+                ['resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class]
+            );
+
+            ApprovalPolicyStep::firstOrCreate(
+                ['approval_policy_id' => $policy->id, 'step_order' => 2],
+                ['resolver_class' => \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class]
+            );
+        }
 
         $policy->refresh();
 
         $requesterId = $requester?->id
-            ?? Employee::whereHas('position', fn ($q) => $q->where('code', 'BDH')->orWhere('name', 'like', '%Business Division Head%'))->value('id')
+            ?? Employee::whereHas('position', fn ($q) => $q->whereIn('code', ['BDH', 'BDH-PKJ'])->orWhere('name', 'like', '%Business Division Head%'))->value('id')
             ?? ($departmentId ? Employee::where('department_id', $departmentId)->value('id') : null)
             ?? Employee::value('id');
 
@@ -98,7 +124,7 @@ class BusinessTrip extends Model
     public function resolveRecapSignatories(): array
     {
         $preparedBy = Employee::with(['position', 'department', 'organization', 'user'])
-            ->whereHas('position', fn ($q) => $q->where('code', 'BDH')->orWhere('name', 'like', '%Business Division Head%'))
+            ->whereHas('position', fn ($q) => $q->whereIn('code', ['BDH', 'BDH-PKJ'])->orWhere('name', 'like', '%Business Division Head%'))
             ->first()
             ?? $this->memo?->creator;
 
@@ -114,6 +140,7 @@ class BusinessTrip extends Model
 
         if (! $approvedBy) {
             $approvedBy = Employee::with(['position', 'department', 'organization', 'user'])
+                ->whereDoesntHave('position', fn ($pq) => $pq->whereIn('code', ['BDH', 'BDH-PKJ'])->orWhere('name', 'like', '%Business Division Head%'))
                 ->where(function ($q) {
                     $q->whereHas('position', fn ($pq) => $pq->where('level', 0)->orWhere('name', 'like', '%Division Head%'))
                         ->orWhereHas('user.roles', fn ($rq) => $rq->where('name', 'Division Head'));
@@ -142,7 +169,7 @@ class BusinessTrip extends Model
             : collect();
 
         $preparedBy = Employee::with(['position', 'department', 'organization', 'user'])
-            ->whereHas('position', fn ($q) => $q->where('code', 'BDH')->orWhere('name', 'like', '%Business Division Head%'))
+            ->whereHas('position', fn ($q) => $q->whereIn('code', ['BDH', 'BDH-PKJ'])->orWhere('name', 'like', '%Business Division Head%'))
             ->first()
             ?? $trips->first()?->memo?->creator;
 
@@ -175,6 +202,7 @@ class BusinessTrip extends Model
 
         if (! $approvedBy) {
             $approvedBy = Employee::with(['position', 'department', 'organization', 'user'])
+                ->whereDoesntHave('position', fn ($pq) => $pq->whereIn('code', ['BDH', 'BDH-PKJ'])->orWhere('name', 'like', '%Business Division Head%'))
                 ->where(function ($q) {
                     $q->whereHas('position', fn ($pq) => $pq->where('level', 0)->orWhere('name', 'like', '%Division Head%'))
                         ->orWhereHas('user.roles', fn ($rq) => $rq->where('name', 'Division Head'));
@@ -196,9 +224,17 @@ class BusinessTrip extends Model
      */
     public function resolveDepartmentManagers(): \Illuminate\Support\Collection
     {
+        $hasWorkAreas = \Illuminate\Support\Facades\Schema::hasTable('work_areas');
+        $relations = ['employee.department', 'employee.position', 'employee.user'];
+        if ($hasWorkAreas) {
+            $relations[] = 'employee.workArea.coordinator.position';
+            $relations[] = 'employee.workArea.coordinator.department';
+            $relations[] = 'employee.workArea.coordinator.user';
+        }
+
         $sppds = $this->relationLoaded('sppds')
             ? $this->sppds
-            : $this->sppds()->with(['employee.department', 'employee.position', 'employee.user'])->get();
+            : $this->sppds()->with($relations)->get();
 
         $managers = collect();
 
@@ -208,22 +244,27 @@ class BusinessTrip extends Model
                 continue;
             }
 
-            $directManager = $sppd->employee?->manager;
-            if (
-                $directManager
-                && (int) ($directManager->position?->level ?? -1) === 1
-                && strtoupper((string) ($directManager->position?->code ?? '')) !== 'BDH'
-            ) {
-                $manager = $directManager->loadMissing(['position', 'department', 'user']);
+            $coordinator = $hasWorkAreas ? $sppd->employee?->workArea?->coordinator : null;
+            if ($coordinator && ! $coordinator->isBusinessDivisionHead()) {
+                $manager = $coordinator->loadMissing(['position', 'department', 'user']);
             } else {
-                $manager = Employee::with(['position', 'department', 'user'])
-                    ->where('department_id', $deptId)
-                    ->whereHas('position', function ($pq) {
-                        $pq->where('level', 1)
-                            ->where('code', '!=', 'BDH')
-                            ->where('name', 'not like', '%Business Division Head%');
-                    })
-                    ->first();
+                $directManager = $sppd->employee?->manager;
+                if (
+                    $directManager
+                    && (int) ($directManager->position?->level ?? -1) === 1
+                    && ! $directManager->isBusinessDivisionHead()
+                ) {
+                    $manager = $directManager->loadMissing(['position', 'department', 'user']);
+                } else {
+                    $manager = Employee::with(['position', 'department', 'user'])
+                        ->where('department_id', $deptId)
+                        ->whereHas('position', function ($pq) {
+                            $pq->where('level', 1)
+                                ->whereNotIn('code', ['BDH', 'BDH-PKJ'])
+                                ->where('name', 'not like', '%Business Division Head%');
+                        })
+                        ->first();
+                }
             }
 
             if (! $manager) {

@@ -27,6 +27,9 @@ class MemoApprovalResource extends Resource
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         if (! $user) return false;
+        if ($user->employee?->isBusinessDivisionHead() && ! $user->hasAnyRole(['Superadmin', 'Admin'])) {
+            return false;
+        }
         return $user->hasAnyRole(['Superadmin', 'Admin', 'Manager']);
     }
 
@@ -91,6 +94,15 @@ class MemoApprovalResource extends Resource
         $employee = $user->employee;
         if (! $employee) {
             return $query;
+        }
+
+        if ($employee->work_area_id) {
+            return $query->where(function (Builder $q) use ($employee) {
+                $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                    ->orWhereHasMorph('document', [\App\Models\Memo::class], function (Builder $memoQuery) use ($employee) {
+                        $memoQuery->whereHas('creator', fn (Builder $cq) => $cq->where('work_area_id', $employee->work_area_id));
+                    });
+            });
         }
 
         // Managers and users can see approval requests relevant to their department or where they are approver/creator

@@ -384,41 +384,49 @@ class MemoResource extends Resource
                                     ->preload()
                                     ->placeholder('Pilih satu atau lebih pegawai yang ditugaskan...')
                                     ->options(function () {
-                                        $user = auth()->user();
+                                        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
 
                                         if ($user && ($user->hasRole('Superadmin') || $user->hasRole('Admin'))) {
-                                            return \App\Models\Employee::with('department')
+                                            return \App\Models\Employee::with(['workArea', 'department'])
+                                                ->orderBy('name')
                                                 ->get()
                                                 ->mapWithKeys(function ($emp) {
-                                                    $unit = $emp->department?->name ?? 'Tanpa Unit';
-                                                    return [$emp->id => "{$emp->name} ({$emp->identity_number}) - {$unit}"];
+                                                    $area = $emp->workArea?->name ?? $emp->department?->name ?? 'Tanpa Area Kerja';
+                                                    return [$emp->id => "{$emp->name} ({$emp->identity_number}) - {$area}"];
                                                 });
                                         }
 
                                         $myEmployee = $user?->employee;
-                                        $departmentId = $myEmployee?->department_id;
+                                        $workAreaId = $myEmployee?->work_area_id;
 
-                                        if (! $departmentId) {
-                                            return \App\Models\Employee::with('department')
+                                        if ($workAreaId) {
+                                            return \App\Models\Employee::where('work_area_id', $workAreaId)
+                                                ->orderBy('name')
                                                 ->get()
-                                                ->mapWithKeys(fn ($e) => [$e->id => "{$e->name} ({$e->identity_number})"]);
+                                                ->mapWithKeys(function ($emp) {
+                                                    return [$emp->id => "{$emp->name} ({$emp->identity_number})"];
+                                                });
                                         }
 
-                                        return \App\Models\Employee::where('department_id', $departmentId)
-                                            ->get()
-                                            ->mapWithKeys(function ($emp) {
-                                                return [$emp->id => "{$emp->name} ({$emp->identity_number})"];
-                                            });
+                                        $departmentId = $myEmployee?->department_id;
+                                        if ($departmentId && \App\Models\WorkArea::count() === 0) {
+                                            return \App\Models\Employee::where('department_id', $departmentId)
+                                                ->orderBy('name')
+                                                ->get()
+                                                ->mapWithKeys(fn ($emp) => [$emp->id => "{$emp->name} ({$emp->identity_number})"]);
+                                        }
+
+                                        return collect();
                                     })
                                     ->helperText(function () {
-                                        $user = auth()->user();
+                                        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
                                         if ($user && ($user->hasRole('Superadmin') || $user->hasRole('Admin'))) {
-                                            return 'Super Admin dapat memilih peserta dari semua unit kerja.';
+                                            return 'Super Admin dapat memilih peserta dari semua area kerja.';
                                         }
-                                        $unitName = $user?->employee?->department?->name;
-                                        return $unitName
-                                            ? "Unit {$unitName}: Menampilkan daftar pegawai dari unit kerja {$unitName}."
-                                            : 'Pilih pegawai yang ditugaskan dalam perjalanan dinas ini.';
+                                        $areaName = $user?->employee?->workArea?->name;
+                                        return $areaName
+                                            ? "Area Kerja {$areaName}: Menampilkan daftar pegawai dari area kerja {$areaName}."
+                                            : 'Pilih pegawai dari area kerja yang sama untuk ditugaskan dalam perjalanan dinas ini.';
                                     })
                                     ->columnSpanFull(),
                             ])

@@ -7,6 +7,7 @@ use App\Models\BusinessTrip;
 use App\Models\OfficialTravelRecap;
 use App\Models\TransportAccommodationRecap;
 use App\Services\Approval\ApprovalResolver;
+use App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver;
 use App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver;
 use App\Services\Signature\SignatureService;
 use Filament\Actions;
@@ -45,6 +46,9 @@ class RecapTableSupport
                 }
 
                 $current = $req->currentStep();
+                if ($current?->policyStep?->resolver_class === BusinessDivisionHeadAuthorityResolver::class) {
+                    return 'Menunggu Division Head Perkasa';
+                }
                 if ($current?->policyStep?->resolver_class === DivisionHeadAuthorityResolver::class) {
                     return 'Menunggu Division Head';
                 }
@@ -54,7 +58,7 @@ class RecapTableSupport
             ->color(fn (string $state): string => match ($state) {
                 'Disetujui' => 'success',
                 'Ditolak' => 'danger',
-                'Menunggu Pemeriksaan Manajer', 'Menunggu Division Head' => 'warning',
+                'Menunggu Division Head Perkasa', 'Menunggu Pemeriksaan Manajer', 'Menunggu Division Head' => 'warning',
                 default => 'gray',
             });
     }
@@ -73,7 +77,7 @@ class RecapTableSupport
                 ->size('sm')
                 ->requiresConfirmation()
                 ->modalHeading('Ajukan Persetujuan Rekap')
-                ->modalDescription('Rekap akan diajukan untuk diperiksa oleh Manajer Unit Kerja dan disetujui oleh Division Head.')
+                ->modalDescription('Rekap akan diajukan untuk diperiksa terlebih dahulu oleh Manajer, kemudian disetujui oleh Division Head Perkasa dan Division Head PGN.')
                 ->visible(function (Model $record): bool {
                     $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
                     if (! $user || ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
@@ -185,7 +189,10 @@ class RecapTableSupport
                     $req = static::latestApproval($record);
                     $step = $req?->currentStep();
 
-                    return $step?->policyStep?->resolver_class === DivisionHeadAuthorityResolver::class
+                    return in_array($step?->policyStep?->resolver_class, [
+                        BusinessDivisionHeadAuthorityResolver::class,
+                        DivisionHeadAuthorityResolver::class,
+                    ], true)
                         ? 'Setujui & Tandatangani'
                         : 'Periksa & Tandatangani';
                 })
@@ -373,6 +380,56 @@ class RecapTableSupport
         return $count > 0 ? (string) $count : null;
     }
 
+    public static function signatureVerificationInfolistSection(): \Filament\Infolists\Components\Section
+    {
+        return \Filament\Infolists\Components\Section::make('Tanda Tangan Elektronik & Verifikasi Keaslian')
+            ->icon('heroicon-o-shield-check')
+            ->iconColor('success')
+            ->description('Klik tombol "Verifikasi Tanda Tangan" di bawah (atau klik langsung gambar tanda tangan / QR Code di dalam file Cetak PDF) untuk membuka halaman verifikasi keaslian tanda tangan.')
+            ->visible(fn (Model $record): bool => \Illuminate\Support\Facades\Schema::hasTable('document_signatures')
+                && \App\Models\DocumentSignature::where('document_type', get_class($record))->where('document_id', $record->getKey())->exists())
+            ->schema([
+                \Filament\Infolists\Components\TextEntry::make('digital_signatures_list')
+                    ->label('')
+                    ->html()
+                    ->state(function (Model $record): string {
+                        $sigs = \App\Models\DocumentSignature::where('document_type', get_class($record))
+                            ->where('document_id', $record->getKey())
+                            ->orderBy('signed_at')
+                            ->get();
+
+                        if ($sigs->isEmpty()) {
+                            return '<span class="text-sm text-gray-400">Belum ada tanda tangan elektronik yang tercatat.</span>';
+                        }
+
+                        return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">'
+                            . $sigs->map(function (\App\Models\DocumentSignature $sig): string {
+                                $name = e($sig->signer_name);
+                                $pos = e($sig->signer_position ?: $sig->role_label);
+                                $role = e($sig->role_label);
+                                $time = $sig->signed_at ? e($sig->signed_at->timezone('Asia/Jakarta')->translatedFormat('d M Y, H:i') . ' WIB') : '-';
+                                $url = e($sig->verification_url);
+
+                                return '<div style="border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:12px;background:rgba(16,185,129,0.05);display:flex;flex-direction:column;justify-content:space-between;gap:10px;">'
+                                    . '<div>'
+                                    . '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#10b981;margin-bottom:2px;">✓ ' . $role . '</div>'
+                                    . '<div style="font-size:14px;font-weight:700;">' . $name . '</div>'
+                                    . '<div style="font-size:12px;color:#6b7280;">' . $pos . '</div>'
+                                    . '<div style="font-size:11px;color:#9ca3af;margin-top:4px;">Ditandatangani: ' . $time . '</div>'
+                                    . '</div>'
+                                    . '<div>'
+                                    . '<a href="' . $url . '" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:6px;background:#059669;color:#ffffff;font-size:12px;font-weight:600;text-decoration:none;">'
+                                    . 'Verifikasi Tanda Tangan &nearr;'
+                                    . '</a>'
+                                    . '</div>'
+                                    . '</div>';
+                            })->implode('')
+                            . '</div>';
+                    })
+                    ->columnSpanFull(),
+            ]);
+    }
+
     public static function approvalTable(Table $table, string $recapResourceClass, string $printRouteName): Table
     {
         return $table
@@ -405,7 +462,12 @@ class RecapTableSupport
                                 return 'Ditolak';
                             }
 
-                            return $record->currentStep()?->policyStep?->resolver_class === DivisionHeadAuthorityResolver::class
+                            $resolverClass = $record->currentStep()?->policyStep?->resolver_class;
+                            if ($resolverClass === BusinessDivisionHeadAuthorityResolver::class) {
+                                return 'Menunggu Division Head Perkasa';
+                            }
+
+                            return $resolverClass === DivisionHeadAuthorityResolver::class
                                 ? 'Menunggu Division Head'
                                 : 'Menunggu Pemeriksaan Manajer';
                         })

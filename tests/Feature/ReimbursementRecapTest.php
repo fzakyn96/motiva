@@ -87,6 +87,71 @@ class ReimbursementRecapTest extends TestCase
         $updated = ReimbursementSetting::current()->fresh();
         $this->assertEquals(7.5, (float) $updated->transport_manfee_percent);
         $this->assertEquals(8.0, (float) $updated->travel_manfee_percent);
+
+        // Set batas maksimal manfee: Transport = 5%, Travel = 6%
+        $updated->update([
+            'transport_manfee_percent' => 5.0,
+            'travel_manfee_percent' => 6.0,
+        ]);
+
+        $org = Organization::create(['name' => 'PT. Perusahaan Gas Negara (Persero) Tbk.', 'code' => 'PGN']);
+        $dept = Department::create(['organization_id' => $org->id, 'name' => 'MESI', 'code' => 'MESI']);
+
+        $transportRecap = TransportAccommodationRecap::create([
+            'department_id' => $dept->id,
+            'period_month' => 'November 2026',
+            'period_label' => 'November 2026',
+            'work_name' => 'Pekerjaan MESI',
+            'manfee_percent' => 5.0,
+        ]);
+        $transportRecap->items()->create([
+            'description' => 'Tiket Pesawat',
+            'amount' => 1000000,
+            'service_fee' => 0,
+            'total_amount' => 1000000,
+        ]);
+        $transportRecap->recalculateTotals();
+
+        $travelRecap = OfficialTravelRecap::create([
+            'department_id' => $dept->id,
+            'period_month' => 'November',
+            'period_label' => 'November 2026',
+            'work_name' => 'Pekerjaan MESI',
+            'manfee_percent' => 6.0,
+        ]);
+        $travelRecap->items()->create([
+            'description' => 'SPPD Dinas',
+            'amount' => 2000000,
+        ]);
+        $travelRecap->recalculateTotals();
+
+        // Tidak boleh melebihi batas maksimal pengaturan (5% untuk Transport, 6% untuk Travel)
+        Livewire::test(\App\Filament\Admin\Resources\TransportAccommodationRecapResource\Pages\EditTransportAccommodationRecap::class, ['record' => $transportRecap->id])
+            ->fillForm(['manfee_percent' => 6.0])
+            ->call('save')
+            ->assertHasFormErrors(['manfee_percent' => 'max']);
+
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\EditOfficialTravelRecap::class, ['record' => $travelRecap->id])
+            ->fillForm(['manfee_percent' => 7.0])
+            ->call('save')
+            ->assertHasFormErrors(['manfee_percent' => 'max']);
+
+        // Boleh disesuaikan lebih kecil dari batas maksimal pengaturan (misal 3% untuk Transport, 4% untuk Travel)
+        Livewire::test(\App\Filament\Admin\Resources\TransportAccommodationRecapResource\Pages\EditTransportAccommodationRecap::class, ['record' => $transportRecap->id])
+            ->fillForm(['manfee_percent' => 3.0])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertEquals(3.0, (float) $transportRecap->fresh()->manfee_percent);
+        $this->assertEquals(30000.0, (float) $transportRecap->fresh()->manfee_amount);
+
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\EditOfficialTravelRecap::class, ['record' => $travelRecap->id])
+            ->fillForm(['manfee_percent' => 4.0])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertEquals(4.0, (float) $travelRecap->fresh()->manfee_percent);
+        $this->assertEquals(80000.0, (float) $travelRecap->fresh()->manfee_amount);
     }
 
     public function test_hr_creates_recaps_with_autofill_and_manager_plus_division_head_approve_and_sign(): void
@@ -559,5 +624,231 @@ class ReimbursementRecapTest extends TestCase
         $this->assertSame('approved', $travelApproval->fresh()->status);
         $this->assertNull(TransportAccommodationApprovalResource::getNavigationBadge());
         $this->assertNull(OfficialTravelApprovalResource::getNavigationBadge());
+    }
+
+    public function test_business_division_head_can_approve_recaps_like_manager_and_renders_as_prepared_by(): void
+    {
+        $orgPkj = Organization::create(['name' => 'PT Permata Karya Jasa', 'code' => 'PKJ']);
+        $orgPgn = Organization::create(['name' => 'PT Perusahaan Gas Negara (Persero) Tbk.', 'code' => 'PGN']);
+        $dept = Department::create(['organization_id' => $orgPgn->id, 'name' => 'MESI', 'code' => 'MESI']);
+
+        $divPos = Position::create(['name' => 'Division Head Asset Integrity Management System', 'code' => 'DIV-AIMS', 'level' => 0]);
+        $bdhPos = Position::create(['name' => 'Business Division Head', 'code' => 'BDH', 'level' => 1]);
+        $mgrPos = Position::create(['name' => 'Sr. Expert I. Infrastructure Information System', 'code' => 'MGR', 'level' => 1]);
+        $staffPos = Position::create(['name' => 'Staff', 'code' => 'STAFF', 'level' => 3]);
+
+        $dummyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+        $herryUser = User::factory()->create([
+            'name' => 'Herry Rachmadi',
+            'signature_type' => 'draw',
+            'signature_data' => $dummyPng,
+        ]);
+        $herryUser->assignRole('Division Head');
+        $herryEmp = Employee::create([
+            'user_id' => $herryUser->id,
+            'organization_id' => $orgPgn->id,
+            'department_id' => $dept->id,
+            'position_id' => $divPos->id,
+            'identity_number' => '125000000',
+            'name' => 'Herry Rachmadi',
+        ]);
+
+        $khairulUser = User::factory()->create([
+            'name' => 'Khairul Khitam',
+            'signature_type' => 'draw',
+            'signature_data' => $dummyPng,
+        ]);
+        $khairulUser->assignRole('Manager');
+        Employee::create([
+            'user_id' => $khairulUser->id,
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'position_id' => $bdhPos->id,
+            'identity_number' => '125000005',
+            'name' => 'Khairul Khitam',
+        ]);
+
+        $nuramzanUser = User::factory()->create([
+            'name' => 'M Nuramzan Iftari',
+            'signature_type' => 'draw',
+            'signature_data' => $dummyPng,
+        ]);
+        $nuramzanUser->assignRole('Manager');
+        $nuramzanEmp = Employee::create([
+            'user_id' => $nuramzanUser->id,
+            'organization_id' => $orgPgn->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+            'manager_id' => $herryEmp->id,
+            'identity_number' => '125000001',
+            'name' => 'M Nuramzan Iftari',
+        ]);
+
+        $workArea = \App\Models\WorkArea::create([
+            'department_id' => $dept->id,
+            'code' => 'REG1',
+            'name' => 'Regional 1',
+            'coordinator_employee_id' => $nuramzanEmp->id,
+        ]);
+
+        $hrUser = User::factory()->create(['name' => 'HR User']);
+        $hrUser->assignRole('HR');
+        $hrEmp = Employee::create([
+            'user_id' => $hrUser->id,
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $workArea->id,
+            'position_id' => $staffPos->id,
+            'identity_number' => '125000004',
+            'name' => 'HR User',
+        ]);
+
+        $this->actingAs($hrUser);
+
+        $trip = BusinessTrip::create([
+            'activity_name' => 'Kunjungan Lapangan',
+            'destination' => 'Jakarta',
+            'start_date' => '2026-11-01',
+            'end_date' => '2026-11-02',
+            'status' => 'completed',
+            'created_by' => $hrUser->id,
+        ]);
+        Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $hrEmp->id,
+            'sppd_number' => '0099/SPPD/MESI/11/2026',
+            'status' => 'approved',
+            'origin_location' => 'Jakarta',
+            'destination_location' => 'Batam',
+            'departure_date' => '2026-11-01',
+            'return_date' => '2026-11-02',
+            'total_days' => 2,
+        ]);
+
+        $transportRecap = TransportAccommodationRecap::create([
+            'department_id' => $dept->id,
+            'business_trip_id' => $trip->id,
+            'period_month' => 'November 2026',
+            'period_label' => 'November 2026',
+            'work_name' => 'Pekerjaan MESI',
+            'created_by' => $hrUser->id,
+        ]);
+
+        $travelRecap = OfficialTravelRecap::create([
+            'department_id' => $dept->id,
+            'business_trip_id' => $trip->id,
+            'period_month' => 'November 2026',
+            'period_label' => 'November 2026',
+            'work_name' => 'Pekerjaan MESI',
+            'created_by' => $hrUser->id,
+        ]);
+
+        $this->assertSame('Khairul Khitam', $transportRecap->prepared_by_name);
+        $this->assertSame('Business Division Head', $transportRecap->prepared_by_position);
+        $this->assertSame('Khairul Khitam', $travelRecap->prepared_by_name);
+        $this->assertSame('Business Division Head', $travelRecap->prepared_by_position);
+
+        // HR mengajukan rekap (Khairul Khitam tidak perlu mengajukan)
+        Livewire::test(ListTransportAccommodationRecaps::class)
+            ->callTableAction('submit_recap', $transportRecap)
+            ->assertHasNoTableActionErrors();
+
+        Livewire::test(ListOfficialTravelRecaps::class)
+            ->callTableAction('submit_recap', $travelRecap)
+            ->assertHasNoTableActionErrors();
+
+        // Step 1: M Nuramzan Iftari (Koordinator Area Kerja / Manager PGN) memeriksa & menandatangani terlebih dahulu (kolom Diperiksa oleh)
+        $this->actingAs($nuramzanUser);
+        Livewire::test(\App\Filament\Admin\Resources\TransportAccommodationRecapResource\Pages\ViewTransportAccommodationRecap::class, ['record' => $transportRecap->id])
+            ->callAction('approve_recap', data: ['notes' => 'Diperiksa Koordinator Area Kerja'])
+            ->assertHasNoActionErrors();
+
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ViewOfficialTravelRecap::class, ['record' => $travelRecap->id])
+            ->callAction('approve_recap', data: ['notes' => 'Diperiksa Koordinator Area Kerja'])
+            ->assertHasNoActionErrors();
+
+        // Step 2: Khairul Khitam (Division Head Perkasa) menyetujui & menandatangani Rekap (kolom Disusun oleh)
+        $this->actingAs($khairulUser);
+        $this->assertFalse(\App\Filament\Admin\Resources\MemoApprovalResource::canViewAny());
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdApprovalResource::canViewAny());
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdCostApprovalResource::canViewAny());
+        $this->assertTrue(TransportAccommodationApprovalResource::canViewAny());
+        $this->assertTrue(OfficialTravelApprovalResource::canViewAny());
+
+        Livewire::test(\App\Filament\Admin\Resources\TransportAccommodationRecapResource\Pages\ViewTransportAccommodationRecap::class, ['record' => $transportRecap->id])
+            ->callAction('approve_recap', data: ['notes' => 'OK Division Head Perkasa'])
+            ->assertHasNoActionErrors();
+
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ViewOfficialTravelRecap::class, ['record' => $travelRecap->id])
+            ->callAction('approve_recap', data: ['notes' => 'OK Division Head Perkasa'])
+            ->assertHasNoActionErrors();
+
+        $this->assertDatabaseHas('document_signatures', [
+            'document_type' => TransportAccommodationRecap::class,
+            'document_id' => $transportRecap->id,
+            'user_id' => $khairulUser->id,
+            'role_type' => 'requester',
+        ]);
+        $this->assertDatabaseHas('document_signatures', [
+            'document_type' => OfficialTravelRecap::class,
+            'document_id' => $travelRecap->id,
+            'user_id' => $khairulUser->id,
+            'role_type' => 'requester',
+        ]);
+
+        // Step 3: Herry Rachmadi (Division Head PGN) menyetujui & menandatangani (kolom Disetujui oleh)
+        $this->actingAs($herryUser);
+        Livewire::test(\App\Filament\Admin\Resources\TransportAccommodationRecapResource\Pages\ViewTransportAccommodationRecap::class, ['record' => $transportRecap->id])
+            ->callAction('approve_recap', data: ['notes' => 'Disetujui Division Head PGN'])
+            ->assertHasNoActionErrors();
+
+        Livewire::test(\App\Filament\Admin\Resources\OfficialTravelRecapResource\Pages\ViewOfficialTravelRecap::class, ['record' => $travelRecap->id])
+            ->callAction('approve_recap', data: ['notes' => 'Disetujui Division Head PGN'])
+            ->assertHasNoActionErrors();
+
+        // Verify print views render Khairul Khitam / Business Division Head in Disusun oleh
+        $transportHtml = view('recaps.transport-print', [
+            'trip' => $transportRecap->fresh(['items', 'department', 'businessTrip']),
+            'summary' => [
+                'rows' => [],
+                'subtotal_amount' => 0.0,
+                'total_service_fee' => 0.0,
+                'total_cost' => 0.0,
+                'manfee_percent' => 5.0,
+                'manfee_amount' => 0.0,
+                'grand_total' => 0.0,
+            ],
+            'signatories' => $transportRecap->resolveSignatories(),
+            'step0Approved' => true,
+            'step1Approved' => true,
+            'step2Approved' => true,
+            'periodMonth' => $transportRecap->period_month,
+            'periodLabel' => $transportRecap->period_label,
+            'workName' => $transportRecap->work_name,
+        ])->render();
+
+        $travelHtml = view('recaps.travel-print', [
+            'trip' => $travelRecap->fresh(['items', 'department', 'businessTrip']),
+            'summary' => [
+                'rows' => [],
+                'total_work_cost' => 0.0,
+                'manfee_percent' => 6.0,
+                'manfee_amount' => 0.0,
+                'grand_total' => 0.0,
+            ],
+            'signatories' => $travelRecap->resolveSignatories(),
+            'step0Approved' => true,
+            'step1Approved' => true,
+            'step2Approved' => true,
+            'periodMonth' => $travelRecap->period_month,
+            'periodLabel' => $travelRecap->period_label,
+            'workName' => $travelRecap->work_name,
+        ])->render();
+
+        $this->assertStringContainsString('Khairul Khitam', $transportHtml);
+        $this->assertStringContainsString('Business Division Head', $transportHtml);
+        $this->assertStringContainsString('Khairul Khitam', $travelHtml);
+        $this->assertStringContainsString('Business Division Head', $travelHtml);
     }
 }

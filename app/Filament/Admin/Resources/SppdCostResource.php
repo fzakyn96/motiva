@@ -71,7 +71,7 @@ class SppdCostResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('status', 'approved')
-            ->with(['employee.position', 'employee.department', 'cost', 'businessTrip.memo']);
+            ->with(['employee.position', 'employee.department', 'cost', 'businessTrip.memo', 'businessTrip.sppds']);
     }
 
     public static function calculateAllTotals(Forms\Set $set, Forms\Get $get): void
@@ -572,6 +572,13 @@ class SppdCostResource extends Resource
                             return $nip ? "{$pos} • {$nip}" : $pos;
                         })
                         ->searchable(),
+                    Tables\Columns\TextColumn::make('businessTrip.memo.nomor_memo')
+                        ->label('Nomor Memo')
+                        ->badge()
+                        ->color('gray')
+                        ->placeholder('Tanpa Memo')
+                        ->searchable()
+                        ->grow(false),
                     Tables\Columns\TextColumn::make('destination_location')
                         ->label('Tujuan')
                         ->icon('heroicon-m-map-pin')
@@ -658,8 +665,29 @@ class SppdCostResource extends Resource
                 ])->collapsible(),
             ])
             ->defaultSort('id', 'desc')
+            ->groups([
+                Tables\Grouping\Group::make('businessTrip.memo.nomor_memo')
+                    ->label('Nomor Memo')
+                    ->collapsible(),
+            ])
             ->filters([
                 \App\Filament\Admin\Support\RecapTableSupport::monthYearFilter('departure_date'),
+                Tables\Filters\SelectFilter::make('business_trip_id')
+                    ->label('Nomor Memo')
+                    ->options(function (): array {
+                        return \App\Models\BusinessTrip::whereHas('sppds', fn (Builder $q) => $q->where('status', 'approved'))
+                            ->with(['memo'])
+                            ->withCount(['sppds as approved_sppds_count' => fn (Builder $q) => $q->where('status', 'approved')])
+                            ->orderByDesc('id')
+                            ->get()
+                            ->mapWithKeys(function (\App\Models\BusinessTrip $trip): array {
+                                $noMemo = $trip->memo?->nomor_memo ?: ('Trip #' . $trip->id);
+                                $agenda = $trip->memo?->agenda ?: ($trip->activity_name ?: '-');
+                                return [$trip->id => "{$noMemo} — {$agenda} ({$trip->approved_sppds_count} Peserta)"];
+                            })
+                            ->all();
+                    })
+                    ->searchable(),
                 Tables\Filters\SelectFilter::make('base_type')
                     ->label('Kategori Tarif')
                     ->options(fn () => \App\Models\SppdRateStandard::getCategoryNames())
@@ -682,6 +710,26 @@ class SppdCostResource extends Resource
                     ->color('warning')
                     ->visible(fn (Sppd $record) => $record->cost !== null)
                     ->url(fn (Sppd $record) => static::getUrl('calculate', ['record' => $record])),
+                Tables\Actions\Action::make('bulk_memo_calculate')
+                    ->label('Bulk per Memo')
+                    ->icon('heroicon-o-squares-plus')
+                    ->button()
+                    ->size('sm')
+                    ->color('success')
+                    ->tooltip('Isi rincian biaya & evidence sekaligus untuk peserta dalam Nomor Memo yang sama')
+                    ->visible(function (Sppd $record): bool {
+                        if (! $record->business_trip_id) {
+                            return false;
+                        }
+                        if ($record->relationLoaded('businessTrip') && $record->businessTrip && $record->businessTrip->relationLoaded('sppds')) {
+                            return $record->businessTrip->sppds->where('status', 'approved')->count() > 1;
+                        }
+
+                        return Sppd::where('business_trip_id', $record->business_trip_id)
+                            ->where('status', 'approved')
+                            ->count() > 1;
+                    })
+                    ->url(fn (Sppd $record) => static::getUrl('calculate', ['record' => $record, 'bulk_memo' => 1])),
                 Tables\Actions\Action::make('print')
                     ->label('Cetak')
                     ->icon('heroicon-o-printer')

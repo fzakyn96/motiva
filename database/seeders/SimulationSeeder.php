@@ -9,8 +9,11 @@ class SimulationSeeder extends Seeder
 {
     public function run(): void
     {
-        $org = \App\Models\Organization::firstOrCreate(['code' => 'PTM'], ['name' => 'PT Motiva']);
-        $dept = \App\Models\Department::firstOrCreate(['code' => 'IT'], ['name' => 'IT Department', 'organization_id' => $org->id]);
+        $org = \App\Models\Organization::updateOrCreate(['code' => 'PGN'], ['name' => 'PT. Perusahaan Gas Negara (Persero) Tbk.']);
+        $dept = \App\Models\Department::updateOrCreate(
+            ['code' => 'MESI'],
+            ['name' => 'Management Enterprise System Infrastructure Information (MESI)', 'organization_id' => $org->id]
+        );
         
         $mgrPos = \App\Models\Position::firstOrCreate(['code' => 'MGR'], ['name' => 'Manager', 'level' => 1]);
         $stfPos = \App\Models\Position::firstOrCreate(['code' => 'STF'], ['name' => 'Staff', 'level' => 3]);

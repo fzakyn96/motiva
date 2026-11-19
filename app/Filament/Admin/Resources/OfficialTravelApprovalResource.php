@@ -53,7 +53,9 @@ class OfficialTravelApprovalResource extends Resource
 
     public static function getNavigationBadge(): ?string
     {
-        return RecapTableSupport::pendingApprovalBadge(OfficialTravelRecap::class);
+        $count = static::getEloquentQuery()->where('status', 'pending')->count();
+
+        return $count > 0 ? (string) $count : null;
     }
 
     public static function getNavigationBadgeColor(): ?string
@@ -63,9 +65,27 @@ class OfficialTravelApprovalResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->where('document_type', OfficialTravelRecap::class)
+            ->whereIn('document_id', OfficialTravelRecap::select('id'))
             ->with(['document', 'requester', 'steps.policyStep', 'steps.approver']);
+
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user || $user->hasAnyRole(['Superadmin', 'Admin', 'Division Head'])) {
+            return $query;
+        }
+
+        $employee = $user->employee;
+        if ($employee && ! $employee->isBusinessDivisionHead() && $employee->work_area_id) {
+            $query->where(function (Builder $q) use ($employee) {
+                $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                    ->orWhereHasMorph('document', [OfficialTravelRecap::class], function (Builder $docQuery) use ($employee) {
+                        $docQuery->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id));
+                    });
+            });
+        }
+
+        return $query;
     }
 
     public static function table(Table $table): Table

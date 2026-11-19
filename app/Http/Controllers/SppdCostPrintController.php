@@ -7,7 +7,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 
 class SppdCostPrintController extends Controller
 {
-    public function __invoke(SppdCost $sppdCost)
+    public function __invoke(SppdCost $sppdCost, bool $bypassAuth = false)
     {
         $cost = $sppdCost;
         $cost->load([
@@ -20,12 +20,14 @@ class SppdCostPrintController extends Controller
 
         $sppd = $cost->sppd;
 
-        $user = auth()->user();
-        if (! $user) {
-            abort(401);
-        }
-        if (! $user->hasRole(['Superadmin', 'Admin', 'HR', 'Manager', 'Division Head']) && (int) $sppd?->employee?->user_id !== (int) $user->id) {
-            abort(403, 'Akses formulir biaya SPPD tidak diizinkan.');
+        if (! $bypassAuth) {
+            $user = auth()->user();
+            if (! $user) {
+                abort(401);
+            }
+            if (! $user->hasRole(['Superadmin', 'Admin', 'HR', 'Manager', 'Division Head']) && (int) $sppd?->employee?->user_id !== (int) $user->id) {
+                abort(403, 'Akses formulir biaya SPPD tidak diizinkan.');
+            }
         }
 
         // Pejabat yang memberi perintah selalu Manajer

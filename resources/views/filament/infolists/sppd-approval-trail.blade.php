@@ -127,6 +127,22 @@
                         </div>
                     </div>
                 @endif
+                @if ($step1?->status === 'approved' && \Illuminate\Support\Facades\Schema::hasTable('document_signatures'))
+                    @php
+                        $spvSig = \App\Models\DocumentSignature::where('document_type', \App\Models\Sppd::class)
+                            ->where('document_id', $record->id)
+                            ->where('role_type', 'supervisor')
+                            ->latest('signed_at')
+                            ->first();
+                    @endphp
+                    @if ($spvSig)
+                        <div class="mt-2">
+                            <a href="{{ $spvSig->verification_url }}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;background:#059669;color:#ffffff;font-size:11px;font-weight:600;text-decoration:none;">
+                                ✓ Verifikasi Tanda Tangan Supervisor &nearr;
+                            </a>
+                        </div>
+                    @endif
+                @endif
             </div>
         </div>
 
@@ -193,6 +209,22 @@
                             "{{ $step2->notes }}"
                         </div>
                     </div>
+                @endif
+                @if ($step2?->status === 'approved' && \Illuminate\Support\Facades\Schema::hasTable('document_signatures'))
+                    @php
+                        $mgrSig = \App\Models\DocumentSignature::where('document_type', \App\Models\Sppd::class)
+                            ->where('document_id', $record->id)
+                            ->whereIn('role_type', ['manager', 'approver'])
+                            ->latest('signed_at')
+                            ->first();
+                    @endphp
+                    @if ($mgrSig)
+                        <div class="mt-2">
+                            <a href="{{ $mgrSig->verification_url }}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;background:#059669;color:#ffffff;font-size:11px;font-weight:600;text-decoration:none;">
+                                ✓ Verifikasi Tanda Tangan Manajer &nearr;
+                            </a>
+                        </div>
+                    @endif
                 @endif
             </div>
         </div>

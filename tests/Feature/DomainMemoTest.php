@@ -606,18 +606,16 @@ class DomainMemoTest extends TestCase
             'deletion_reason' => 'Draf memo salah input tujuan.',
         ]);
 
-        // 4. HR tidak boleh mengakses halaman Log Memo, Log SPPD, Log Biaya SPPD, Log Reimbursement
+        // 4. HR tidak boleh mengakses halaman Log Memo, Log SPPD, Log Biaya SPPD
         $this->assertFalse(\App\Filament\Admin\Resources\MemoLogResource::canViewAny());
         $this->assertFalse(\App\Filament\Admin\Resources\SppdLogResource::canViewAny());
         $this->assertFalse(\App\Filament\Admin\Resources\SppdCostLogResource::canViewAny());
-        $this->assertFalse(\App\Filament\Admin\Resources\ReimbursementLogResource::canViewAny());
 
-        // 5. Manajer dan Superadmin boleh mengakses ke-4 halaman Log dan melihat data audit trail
+        // 5. Manajer dan Superadmin boleh mengakses ke-3 halaman Log dan melihat data audit trail
         $this->actingAs($managerUser);
         $this->assertTrue(\App\Filament\Admin\Resources\MemoLogResource::canViewAny());
         $this->assertTrue(\App\Filament\Admin\Resources\SppdLogResource::canViewAny());
         $this->assertTrue(\App\Filament\Admin\Resources\SppdCostLogResource::canViewAny());
-        $this->assertTrue(\App\Filament\Admin\Resources\ReimbursementLogResource::canViewAny());
 
         \Livewire\Livewire::test(\App\Filament\Admin\Resources\MemoLogResource\Pages\ManageMemoLogs::class)
             ->assertSuccessful()
@@ -631,10 +629,6 @@ class DomainMemoTest extends TestCase
         \Livewire\Livewire::test(\App\Filament\Admin\Resources\SppdCostLogResource\Pages\ManageSppdCostLogs::class)
             ->assertSuccessful()
             ->assertSee($expectedSppdNumber);
-
-        \Livewire\Livewire::test(\App\Filament\Admin\Resources\ReimbursementLogResource\Pages\ManageReimbursementLogs::class)
-            ->assertSuccessful()
-            ->assertSee($expectedReimbNumber);
 
         $this->actingAs($superadminUser);
         $this->assertTrue(\App\Filament\Admin\Resources\MemoLogResource::canViewAny());
@@ -823,5 +817,398 @@ class DomainMemoTest extends TestCase
             ->assertSuccessful()
             ->assertSee('Manajer: M Nuramzan Iftari')
             ->assertDontSee('Manajer: Ikhsan Aditya Wardana');
+    }
+
+    public function test_hr_only_sees_memo_participants_from_same_work_area(): void
+    {
+        $orgPgn = \App\Models\Organization::create(['name' => 'PT. Perusahaan Gas Negara (Persero) Tbk.', 'code' => 'PGN']);
+        $orgPkj = \App\Models\Organization::create(['name' => 'PT Permata Karya Jasa', 'code' => 'PKJ']);
+        $dept = \App\Models\Department::create(['organization_id' => $orgPgn->id, 'name' => 'MESI', 'code' => 'MESI']);
+        $pos = \App\Models\Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $areaJkt = \App\Models\WorkArea::create([
+            'department_id' => $dept->id,
+            'code' => 'JKT',
+            'name' => 'Jakarta',
+        ]);
+        $areaBjn = \App\Models\WorkArea::create([
+            'department_id' => $dept->id,
+            'code' => 'BJN',
+            'name' => 'Bojonegara',
+        ]);
+
+        $hrRole = \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'HR', 'guard_name' => 'web']);
+        $hrUser = \App\Models\User::factory()->create(['name' => 'Maria Ulfah']);
+        $hrUser->assignRole($hrRole);
+
+        $hrEmp = \App\Models\Employee::create([
+            'user_id' => $hrUser->id,
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaJkt->id,
+            'position_id' => $pos->id,
+            'name' => 'Maria Ulfah',
+            'identity_number' => '125970065',
+        ]);
+
+        $jktEmp = \App\Models\Employee::create([
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaJkt->id,
+            'position_id' => $pos->id,
+            'name' => 'Chairunnisa',
+            'identity_number' => '125980056',
+        ]);
+
+        $bjnEmp = \App\Models\Employee::create([
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaBjn->id,
+            'position_id' => $pos->id,
+            'name' => 'Diah Nur Cahyani',
+            'identity_number' => '125960268',
+        ]);
+
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+        $this->actingAs($hrUser);
+
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\MemoResource\Pages\CreateMemo::class)
+            ->assertSuccessful()
+            ->assertSee('Area Kerja Jakarta: Menampilkan daftar pegawai dari area kerja Jakarta.')
+            ->assertDontSee('Menampilkan daftar pegawai dari unit kerja')
+            ->assertSee('Chairunnisa (125980056)')
+            ->assertDontSee('Diah Nur Cahyani (125960268)');
+    }
+
+    public function test_manager_and_supervisor_only_see_and_decide_on_same_work_area(): void
+    {
+        $orgPgn = \App\Models\Organization::create(['name' => 'PT. Perusahaan Gas Negara (Persero) Tbk.', 'code' => 'PGN']);
+        $orgPkj = \App\Models\Organization::create(['name' => 'PT Permata Karya Jasa', 'code' => 'PKJ']);
+        $dept = \App\Models\Department::create(['organization_id' => $orgPgn->id, 'name' => 'MESI', 'code' => 'MESI']);
+
+        $mgrPos = \App\Models\Position::create(['name' => 'Manager', 'code' => 'MGR', 'level' => 1]);
+        $spvPos = \App\Models\Position::create(['name' => 'Supervisor', 'code' => 'SPV', 'level' => 2]);
+        $stfPos = \App\Models\Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $areaJkt = \App\Models\WorkArea::create(['department_id' => $dept->id, 'code' => 'JKT', 'name' => 'Jakarta']);
+        $areaBjn = \App\Models\WorkArea::create(['department_id' => $dept->id, 'code' => 'BJN', 'name' => 'Bojonegara']);
+
+        $mgrRole = \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'Manager', 'guard_name' => 'web']);
+        $spvRole = \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'Supervisor', 'guard_name' => 'web']);
+
+        $dummyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+        // Manager & Supervisor Area Jakarta
+        $mgrJktUser = \App\Models\User::factory()->create(['name' => 'M Nuramzan Iftari', 'signature_type' => 'draw', 'signature_data' => $dummyPng]);
+        $mgrJktUser->assignRole($mgrRole);
+        $mgrJktEmp = \App\Models\Employee::create([
+            'user_id' => $mgrJktUser->id,
+            'organization_id' => $orgPgn->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaJkt->id,
+            'position_id' => $mgrPos->id,
+            'name' => 'M Nuramzan Iftari',
+            'identity_number' => 'PGN-002',
+        ]);
+        $areaJkt->update(['coordinator_employee_id' => $mgrJktEmp->id]);
+
+        $spvJktUser = \App\Models\User::factory()->create(['name' => 'Ikhsan Aditya Wardana', 'signature_type' => 'draw', 'signature_data' => $dummyPng]);
+        $spvJktUser->assignRole($spvRole);
+        $spvJktEmp = \App\Models\Employee::create([
+            'user_id' => $spvJktUser->id,
+            'organization_id' => $orgPgn->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaJkt->id,
+            'position_id' => $spvPos->id,
+            'manager_id' => $mgrJktEmp->id,
+            'name' => 'Ikhsan Aditya Wardana',
+            'identity_number' => 'PGN-003',
+        ]);
+
+        // Manager Area Bojonegara
+        $mgrBjnUser = \App\Models\User::factory()->create(['name' => 'Mahar Prasetyo', 'signature_type' => 'draw', 'signature_data' => $dummyPng]);
+        $mgrBjnUser->assignRole($mgrRole);
+        $mgrBjnEmp = \App\Models\Employee::create([
+            'user_id' => $mgrBjnUser->id,
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaBjn->id,
+            'position_id' => $mgrPos->id,
+            'name' => 'Mahar Prasetyo',
+            'identity_number' => 'NO-20001',
+        ]);
+        $areaBjn->update(['coordinator_employee_id' => $mgrBjnEmp->id]);
+
+        // Staff Area Jakarta & Bojonegara
+        $stfJktEmp = \App\Models\Employee::create([
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaJkt->id,
+            'position_id' => $stfPos->id,
+            'manager_id' => $spvJktEmp->id,
+            'name' => 'Chairunnisa',
+            'identity_number' => '125980056',
+        ]);
+        $stfBjnEmp = \App\Models\Employee::create([
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaBjn->id,
+            'position_id' => $stfPos->id,
+            'manager_id' => $mgrBjnEmp->id,
+            'name' => 'Diah Nur Cahyani',
+            'identity_number' => '125960268',
+        ]);
+
+        // Buat Memo Jakarta & Memo Bojonegara
+        $memoJkt = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $stfJktEmp->id,
+            'to_recipient' => 'Manager Jakarta',
+            'agenda' => 'Agenda Dinas Jakarta',
+            'title' => 'Agenda Dinas Jakarta',
+            'content' => 'Isi memo Jakarta',
+            'date' => '2026-11-19',
+            'status' => 'pending',
+            'participants' => [$stfJktEmp->id],
+        ]);
+        $memoBjn = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $stfBjnEmp->id,
+            'to_recipient' => 'Manager Bojonegara',
+            'agenda' => 'Agenda Dinas Bojonegara',
+            'title' => 'Agenda Dinas Bojonegara',
+            'content' => 'Isi memo Bojonegara',
+            'date' => '2026-11-19',
+            'status' => 'pending',
+            'participants' => [$stfBjnEmp->id],
+        ]);
+
+        $reqMemoJkt = \App\Models\ApprovalRequest::where('document_type', Memo::class)->where('document_id', $memoJkt->id)->firstOrFail();
+        $reqMemoBjn = \App\Models\ApprovalRequest::where('document_type', Memo::class)->where('document_id', $memoBjn->id)->firstOrFail();
+
+        $resolver = new \App\Services\Approval\ApprovalResolver();
+
+        // Manager Jakarta hanya bisa approve Memo Jakarta, TIDAK bisa approve Memo Bojonegara
+        $this->assertTrue($resolver->canApprove($reqMemoJkt, $mgrJktEmp));
+        $this->assertFalse($resolver->canApprove($reqMemoBjn, $mgrJktEmp));
+
+        // Manager Bojonegara hanya bisa approve Memo Bojonegara, TIDAK bisa approve Memo Jakarta
+        $this->assertTrue($resolver->canApprove($reqMemoBjn, $mgrBjnEmp));
+        $this->assertFalse($resolver->canApprove($reqMemoJkt, $mgrBjnEmp));
+
+        // Buat SPPD Jakarta & SPPD Bojonegara
+        $trip = \App\Models\BusinessTrip::create([
+            'activity_name' => 'Perjalanan Dinas',
+            'destination' => 'Surabaya',
+            'start_date' => '2026-11-20',
+            'end_date' => '2026-11-22',
+        ]);
+        $sppdJkt = \App\Models\Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $stfJktEmp->id,
+            'sppd_number' => '0101/SPPD/MESI/11/2026',
+            'status' => 'pending',
+            'origin_location' => 'Jakarta',
+            'destination_location' => 'Surabaya',
+            'departure_date' => '2026-11-20',
+            'return_date' => '2026-11-22',
+            'total_days' => 3,
+        ]);
+        $sppdBjn = \App\Models\Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $stfBjnEmp->id,
+            'sppd_number' => '0102/SPPD/MESI/11/2026',
+            'status' => 'pending',
+            'origin_location' => 'Bojonegara',
+            'destination_location' => 'Surabaya',
+            'departure_date' => '2026-11-20',
+            'return_date' => '2026-11-22',
+            'total_days' => 3,
+        ]);
+
+        $reqSppdJkt = \App\Models\ApprovalRequest::where('document_type', \App\Models\Sppd::class)->where('document_id', $sppdJkt->id)->firstOrFail();
+        $reqSppdBjn = \App\Models\ApprovalRequest::where('document_type', \App\Models\Sppd::class)->where('document_id', $sppdBjn->id)->firstOrFail();
+
+        // Supervisor Jakarta hanya bisa approve SPPD Jakarta, TIDAK bisa approve SPPD Bojonegara
+        $this->assertTrue($resolver->canApprove($reqSppdJkt, $spvJktEmp));
+        $this->assertFalse($resolver->canApprove($reqSppdBjn, $spvJktEmp));
+
+        // Verifikasi query visibilitas tabel Persetujuan Memo & Persetujuan SPPD
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+
+        $this->actingAs($mgrJktUser);
+        $visibleMemoIdsForJktMgr = \App\Filament\Admin\Resources\MemoApprovalResource::getEloquentQuery()->pluck('id')->all();
+        $this->assertContains($reqMemoJkt->id, $visibleMemoIdsForJktMgr);
+        $this->assertNotContains($reqMemoBjn->id, $visibleMemoIdsForJktMgr);
+
+        $visibleSppdIdsForJktMgr = \App\Filament\Admin\Resources\SppdApprovalResource::getEloquentQuery()->pluck('id')->all();
+        $this->assertContains($reqSppdJkt->id, $visibleSppdIdsForJktMgr);
+        $this->assertNotContains($reqSppdBjn->id, $visibleSppdIdsForJktMgr);
+
+        $this->actingAs($spvJktUser);
+        $visibleSppdIdsForJktSpv = \App\Filament\Admin\Resources\SppdApprovalResource::getEloquentQuery()->pluck('id')->all();
+        $this->assertContains($reqSppdJkt->id, $visibleSppdIdsForJktSpv);
+        $this->assertNotContains($reqSppdBjn->id, $visibleSppdIdsForJktSpv);
+
+        $this->actingAs($mgrBjnUser);
+        $visibleMemoIdsForBjnMgr = \App\Filament\Admin\Resources\MemoApprovalResource::getEloquentQuery()->pluck('id')->all();
+        $this->assertContains($reqMemoBjn->id, $visibleMemoIdsForBjnMgr);
+        $this->assertNotContains($reqMemoJkt->id, $visibleMemoIdsForBjnMgr);
+
+        $visibleSppdIdsForBjnMgr = \App\Filament\Admin\Resources\SppdApprovalResource::getEloquentQuery()->pluck('id')->all();
+        $this->assertContains($reqSppdBjn->id, $visibleSppdIdsForBjnMgr);
+        $this->assertNotContains($reqSppdJkt->id, $visibleSppdIdsForBjnMgr);
+    }
+
+    public function test_hr_can_bulk_calculate_sppd_cost_by_memo_and_override_individual_employee(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('public');
+
+        $orgPgn = \App\Models\Organization::create(['name' => 'PT. Perusahaan Gas Negara (Persero) Tbk.', 'code' => 'PGN']);
+        $orgPkj = \App\Models\Organization::create(['name' => 'PT Permata Karya Jasa', 'code' => 'PKJ']);
+        $dept = \App\Models\Department::create(['organization_id' => $orgPgn->id, 'name' => 'MESI', 'code' => 'MESI']);
+        $pos = \App\Models\Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $hrRole = \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'HR', 'guard_name' => 'web']);
+        $hrUser = \App\Models\User::factory()->create(['name' => 'Maria Ulfah']);
+        $hrUser->assignRole($hrRole);
+
+        $hrEmp = \App\Models\Employee::create([
+            'user_id' => $hrUser->id,
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'name' => 'Maria Ulfah',
+            'identity_number' => '125970065',
+        ]);
+
+        $emp1 = \App\Models\Employee::create([
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'name' => 'Pegawai Satu',
+            'identity_number' => 'EMP-001',
+        ]);
+        $emp2 = \App\Models\Employee::create([
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'name' => 'Pegawai Dua',
+            'identity_number' => 'EMP-002',
+        ]);
+        $emp3 = \App\Models\Employee::create([
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'position_id' => $pos->id,
+            'name' => 'Pegawai Tiga (Berbeda)',
+            'identity_number' => 'EMP-003',
+        ]);
+
+        $memo = Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $hrEmp->id,
+            'nomor_memo' => '0077/MEMO/MESI/11/2026',
+            'to_recipient' => 'Manajer MESI',
+            'agenda' => 'Penugasan Tim 3 Orang',
+            'title' => 'Penugasan Tim 3 Orang',
+            'content' => 'Isi memo tim',
+            'date' => '2026-11-19',
+            'status' => 'approved',
+            'participants' => [$emp1->id, $emp2->id, $emp3->id],
+        ]);
+
+        $trip = \App\Models\BusinessTrip::create([
+            'memo_id' => $memo->id,
+            'activity_name' => 'Penugasan Tim 3 Orang',
+            'destination' => 'Surabaya',
+            'start_date' => '2026-11-20',
+            'end_date' => '2026-11-21',
+        ]);
+
+        $sppd1 = \App\Models\Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $emp1->id,
+            'sppd_number' => '0077-1/SPPD/MESI/11/2026',
+            'status' => 'approved',
+            'origin_location' => 'Jakarta',
+            'destination_location' => 'Surabaya',
+            'departure_date' => '2026-11-20',
+            'return_date' => '2026-11-21',
+            'total_days' => 2,
+        ]);
+        $sppd2 = \App\Models\Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $emp2->id,
+            'sppd_number' => '0077-2/SPPD/MESI/11/2026',
+            'status' => 'approved',
+            'origin_location' => 'Jakarta',
+            'destination_location' => 'Surabaya',
+            'departure_date' => '2026-11-20',
+            'return_date' => '2026-11-21',
+            'total_days' => 2,
+        ]);
+        $sppd3 = \App\Models\Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $emp3->id,
+            'sppd_number' => '0077-3/SPPD/MESI/11/2026',
+            'status' => 'approved',
+            'origin_location' => 'Jakarta',
+            'destination_location' => 'Surabaya',
+            'departure_date' => '2026-11-20',
+            'return_date' => '2026-11-21',
+            'total_days' => 2,
+        ]);
+
+        \Filament\Facades\Filament::setCurrentPanel(\Filament\Facades\Filament::getPanel('admin'));
+        $this->actingAs($hrUser);
+
+        // 1. HR mengisi biaya SPPD secara Bulk berdasarkan No. Memo untuk Pegawai 1 & Pegawai 2 (mengecualikan Pegawai 3 yang berbeda)
+        $bulkEvidence = \Illuminate\Http\UploadedFile::fake()->create('evidence-bulk-memo.pdf', 100, 'application/pdf');
+
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\SppdCostResource\Pages\CalculateSppdCost::class, ['record' => $sppd1->id])
+            ->assertSuccessful()
+            ->assertSee('0077/MEMO/MESI/11/2026')
+            ->fillForm([
+                'apply_mode' => 'bulk_memo',
+                'target_sppd_ids' => [$sppd1->id, $sppd2->id],
+                'official_days' => 2,
+                'transport_ticket_qty' => 1,
+                'transport_ticket_rate' => 1500000,
+                'hotel_qty' => 1,
+                'hotel_rate' => 600000,
+                'general_evidence' => [$bulkEvidence],
+                'notes' => 'Biaya & evidence sama berdasarkan No. Memo',
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertNotNull($sppd1->fresh()->cost);
+        $this->assertNotNull($sppd2->fresh()->cost);
+        $this->assertNull($sppd3->fresh()->cost);
+        $this->assertEquals((float) $sppd1->fresh()->cost->total_cost, (float) $sppd2->fresh()->cost->total_cost);
+        $this->assertSame('Biaya & evidence sama berdasarkan No. Memo', $sppd2->fresh()->cost->notes);
+
+        // 2. HR mengisi biaya SPPD secara Individual ('single') untuk Pegawai 3 karena rincian biaya & evidence-nya berbeda
+        $singleEvidence = \Illuminate\Http\UploadedFile::fake()->create('evidence-khusus-emp3.pdf', 100, 'application/pdf');
+
+        \Livewire\Livewire::test(\App\Filament\Admin\Resources\SppdCostResource\Pages\CalculateSppdCost::class, ['record' => $sppd3->id])
+            ->assertSuccessful()
+            ->fillForm([
+                'apply_mode' => 'single',
+                'official_days' => 2,
+                'transport_ticket_qty' => 1,
+                'transport_ticket_rate' => 2200000,
+                'hotel_qty' => 1,
+                'hotel_rate' => 850000,
+                'general_evidence' => [$singleEvidence],
+                'notes' => 'Biaya khusus Pegawai Tiga',
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertNotNull($sppd3->fresh()->cost);
+        $this->assertGreaterThan((float) $sppd1->fresh()->cost->total_cost, (float) $sppd3->fresh()->cost->total_cost);
+        $this->assertSame('Biaya khusus Pegawai Tiga', $sppd3->fresh()->cost->notes);
+        $this->assertSame('Biaya & evidence sama berdasarkan No. Memo', $sppd1->fresh()->cost->notes);
     }
 }

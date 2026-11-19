@@ -109,7 +109,7 @@
         <tr>
             <td class="sign-space">
                 @include('signatures.pdf-stamp', [
-                    'render' => $sigService->resolveRenderData($trip, $preparedBy, 'requester', (bool) $preparedBy),
+                    'render' => $sigService->resolveRenderData($trip, $preparedBy, 'requester', $step0Approved ?? (bool) $preparedBy),
                     'align' => 'center',
                     'emptyHeight' => '55px',
                 ])
@@ -132,18 +132,18 @@
             </td>
         </tr>
         <tr>
-            <td><strong>{{ $trip->prepared_by_name ?: ($preparedBy?->name ?? 'Khairul Khitam') }}</strong></td>
+            <td><strong>{{ $preparedBy?->name ?? ($trip->prepared_by_name ?: 'Khairul Khitam') }}</strong></td>
             @foreach ($checkedBy as $checker)
                 <td><strong>{{ $checker?->name ?? ($trip->checked_by_name ?: 'Manajer Unit Kerja') }}</strong></td>
             @endforeach
-            <td><strong>{{ $trip->approved_by_name ?: ($approvedBy?->name ?? 'Division Head') }}</strong></td>
+            <td><strong>{{ $approvedBy?->name ?? ($trip->approved_by_name ?: 'Division Head') }}</strong></td>
         </tr>
         <tr>
-            <td>{{ $trip->prepared_by_position ?: ($preparedBy?->position?->name ?? 'Business Division Head') }}</td>
+            <td>{{ $preparedBy?->position?->name ?? ($trip->prepared_by_position ?: 'Business Division Head') }}</td>
             @foreach ($checkedBy as $checker)
                 <td>{{ $checker?->position?->name ?? ($trip->checked_by_position ?: 'Manajer') }}</td>
             @endforeach
-            <td>{{ $trip->approved_by_position ?: ($approvedBy?->position?->name ?? 'Division Head Asset Integrity Management System') }}</td>
+            <td>{{ $approvedBy?->position?->name ?? ($trip->approved_by_position ?: 'Division Head Asset Integrity Management System') }}</td>
         </tr>
     </table>
 </body>

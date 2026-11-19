@@ -25,7 +25,7 @@ class ListOfficialTravelRecaps extends ListRecords
 
         return [
             Actions\Action::make('sync_monthly_recap')
-                ->label('Buat / Sinkronkan Rekap Bulan Ini')
+                ->label('Sinkronkan Rekap Perjalanan Dinas')
                 ->icon('heroicon-o-arrow-path')
                 ->color('success')
                 ->visible(fn (): bool => OfficialTravelRecapResource::canCreate())
@@ -89,10 +89,6 @@ class ListOfficialTravelRecaps extends ListRecords
                         ->success()
                         ->send();
                 }),
-
-            Actions\CreateAction::make()
-                ->label('Buat Rekap Perjalanan Dinas')
-                ->icon('heroicon-o-plus'),
         ];
     }
 }

@@ -73,6 +73,21 @@
                             <span class="font-bold">Catatan:</span> {{ $step->notes }}
                         </div>
                     @endif
+                    @if ($step->status === 'approved' && \Illuminate\Support\Facades\Schema::hasTable('document_signatures'))
+                        @php
+                            $docSig = \App\Models\DocumentSignature::where('document_type', \App\Models\Memo::class)
+                                ->where('document_id', $record->id)
+                                ->latest('signed_at')
+                                ->first();
+                        @endphp
+                        @if ($docSig)
+                            <div class="mt-2">
+                                <a href="{{ $docSig->verification_url }}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;background:#059669;color:#ffffff;font-size:11px;font-weight:600;text-decoration:none;">
+                                    ✓ Verifikasi Tanda Tangan Elektronik &nearr;
+                                </a>
+                            </div>
+                        @endif
+                    @endif
                 </div>
             </div>
         @endforeach

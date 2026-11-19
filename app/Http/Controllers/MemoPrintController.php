@@ -10,10 +10,12 @@ use Illuminate\Http\Request;
 
 class MemoPrintController extends Controller
 {
-    public function __invoke(Memo $memo)
+    public function __invoke(Memo $memo, bool $bypassAuth = false)
     {
-        $user = auth()->user();
-        abort_if(! $user || ($user->hasRole('Staff') && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Manager'])), 403);
+        if (! $bypassAuth) {
+            $user = auth()->user();
+            abort_if(! $user || ($user->hasRole('Staff') && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Manager'])), 403);
+        }
 
         $memo->load(['creator.position', 'creator.manager.position', 'department']);
 

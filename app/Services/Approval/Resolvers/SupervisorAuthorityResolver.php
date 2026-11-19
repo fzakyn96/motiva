@@ -25,6 +25,11 @@ class SupervisorAuthorityResolver implements AuthorityResolver
             return true;
         }
 
+        // Supervisor hanya berwenang mengambil keputusan pada area kerja yang sama
+        if (! $employee->isSameWorkAreaAsRequest($request)) {
+            return false;
+        }
+
         // 2. Direct supervisor / manager of the requester
         if ($requester->manager_id && (int) $requester->manager_id === (int) $employee->id) {
             return true;
@@ -62,6 +67,7 @@ class SupervisorAuthorityResolver implements AuthorityResolver
 
         if ($requester->department_id) {
             return Employee::where('department_id', $requester->department_id)
+                ->when($requester->work_area_id, fn ($q) => $q->where('work_area_id', $requester->work_area_id))
                 ->where(function ($query) {
                     $query->whereHas('position', fn ($q) => $q->where('level', 2))
                         ->orWhereHas('user.roles', fn ($q) => $q->where('name', 'Supervisor'));

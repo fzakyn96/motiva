@@ -29,17 +29,21 @@ class ExecutiveRecentTripsWidget extends BaseWidget
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
-        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']);
+        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']) || (bool) $employee?->isBusinessDivisionHead();
 
         $query = Sppd::query()
-            ->with(['employee.position', 'employee.department', 'businessTrip', 'cost'])
+            ->with(['employee.position', 'employee.workArea', 'employee.department', 'businessTrip', 'cost'])
             ->latest('id');
 
         if (! $isAllAccess && $employee) {
             $query->whereHas('employee', function (Builder $q) use ($employee) {
-                $q->where('department_id', $employee->department_id)
-                    ->orWhere('manager_id', $employee->id)
-                    ->orWhere('id', $employee->id);
+                if ($employee->work_area_id) {
+                    $q->where('work_area_id', $employee->work_area_id);
+                } else {
+                    $q->where('department_id', $employee->department_id)
+                        ->orWhere('manager_id', $employee->id)
+                        ->orWhere('id', $employee->id);
+                }
             });
         }
 
@@ -57,8 +61,10 @@ class ExecutiveRecentTripsWidget extends BaseWidget
                     ->label('Pegawai')
                     ->description(function (Sppd $record) {
                         $pos = $record->employee?->position?->name;
-                        $dept = $record->employee?->department?->code ?? $record->employee?->department?->name;
-                        $parts = array_filter([$pos, $dept]);
+                        $area = $record->employee?->workArea?->name
+                            ? ('Area ' . $record->employee->workArea->name)
+                            : ($record->employee?->department?->code ?? $record->employee?->department?->name);
+                        $parts = array_filter([$pos, $area]);
                         return ! empty($parts) ? implode(' • ', $parts) : '-';
                     }),
 

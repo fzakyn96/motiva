@@ -31,7 +31,7 @@ class ExecutiveCostSummaryWidget extends ChartWidget
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
-        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']);
+        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']) || (bool) $employee?->isBusinessDivisionHead();
 
         // Generate 6 months labels
         $months = [];
@@ -55,9 +55,13 @@ class ExecutiveCostSummaryWidget extends ChartWidget
             $q->where('status', 'approved');
             if (! $isAllAccess && $employee) {
                 $q->whereHas('employee', function (Builder $eq) use ($employee) {
-                    $eq->where('department_id', $employee->department_id)
-                        ->orWhere('manager_id', $employee->id)
-                        ->orWhere('id', $employee->id);
+                    if ($employee->work_area_id) {
+                        $eq->where('work_area_id', $employee->work_area_id);
+                    } else {
+                        $eq->where('department_id', $employee->department_id)
+                            ->orWhere('manager_id', $employee->id)
+                            ->orWhere('id', $employee->id);
+                    }
                 });
             }
         })->where('created_at', '>=', $startDate)->get();

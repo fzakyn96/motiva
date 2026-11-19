@@ -24,8 +24,9 @@ class DashboardWelcomeBannerWidget extends Widget
         /** @var \App\Models\User|null $user */
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
-        $isExecutive = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Division Head', 'Manager', 'Supervisor']);
-        $isAllAccess = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Division Head']);
+        $isBusinessDivisionHead = (bool) $employee?->isBusinessDivisionHead();
+        $isExecutive = $user && ($user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Division Head', 'Manager', 'Supervisor']) || $isBusinessDivisionHead);
+        $isAllAccess = $user && ($user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Division Head']) || $isBusinessDivisionHead);
         $isHrOrAdmin = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
 
         $pendingMemo = 0;
@@ -47,31 +48,56 @@ class DashboardWelcomeBannerWidget extends Widget
             $qTravel = ApprovalRequest::where('document_type', OfficialTravelRecap::class)->where('status', 'pending');
 
             if (! $isAllAccess && $employee) {
-                $qMemo->whereHasMorph('document', [Memo::class], function (Builder $q) use ($employee) {
-                    $q->where('department_id', $employee->department_id)
-                        ->orWhere('creator_employee_id', $employee->id)
-                        ->orWhereHas('creator', fn (Builder $cq) => $cq->where('manager_id', $employee->id));
-                });
-
-                $qSppd->whereHasMorph('document', [Sppd::class], function (Builder $q) use ($employee) {
-                    $q->whereHas('employee', function (Builder $eq) use ($employee) {
-                        $eq->where('department_id', $employee->department_id)
-                            ->orWhere('manager_id', $employee->id)
-                            ->orWhere('id', $employee->id);
+                if ($employee->work_area_id) {
+                    $qMemo->where(function (Builder $q) use ($employee) {
+                        $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                            ->orWhereHasMorph('document', [Memo::class], fn (Builder $mq) => $mq->whereHas('creator', fn (Builder $cq) => $cq->where('work_area_id', $employee->work_area_id)));
                     });
-                });
 
-                $qSppdCost->whereHasMorph('document', [SppdCost::class], function (Builder $q) use ($employee) {
-                    $q->whereHas('sppd.employee', function (Builder $eq) use ($employee) {
-                        $eq->where('department_id', $employee->department_id)
-                            ->orWhere('manager_id', $employee->id)
-                            ->orWhere('id', $employee->id);
+                    $qSppd->whereHasMorph('document', [Sppd::class], function (Builder $q) use ($employee) {
+                        $q->whereHas('employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id));
                     });
-                });
 
-                if ($employee->department_id) {
-                    $qTransport->whereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $q) => $q->where('department_id', $employee->department_id));
-                    $qTravel->whereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $q) => $q->where('department_id', $employee->department_id));
+                    $qSppdCost->whereHasMorph('document', [SppdCost::class], function (Builder $q) use ($employee) {
+                        $q->whereHas('sppd.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id));
+                    });
+
+                    $qTransport->where(function (Builder $q) use ($employee) {
+                        $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                            ->orWhereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
+                    });
+
+                    $qTravel->where(function (Builder $q) use ($employee) {
+                        $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                            ->orWhereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
+                    });
+                } else {
+                    $qMemo->whereHasMorph('document', [Memo::class], function (Builder $q) use ($employee) {
+                        $q->where('department_id', $employee->department_id)
+                            ->orWhere('creator_employee_id', $employee->id)
+                            ->orWhereHas('creator', fn (Builder $cq) => $cq->where('manager_id', $employee->id));
+                    });
+
+                    $qSppd->whereHasMorph('document', [Sppd::class], function (Builder $q) use ($employee) {
+                        $q->whereHas('employee', function (Builder $eq) use ($employee) {
+                            $eq->where('department_id', $employee->department_id)
+                                ->orWhere('manager_id', $employee->id)
+                                ->orWhere('id', $employee->id);
+                        });
+                    });
+
+                    $qSppdCost->whereHasMorph('document', [SppdCost::class], function (Builder $q) use ($employee) {
+                        $q->whereHas('sppd.employee', function (Builder $eq) use ($employee) {
+                            $eq->where('department_id', $employee->department_id)
+                                ->orWhere('manager_id', $employee->id)
+                                ->orWhere('id', $employee->id);
+                        });
+                    });
+
+                    if ($employee->department_id) {
+                        $qTransport->whereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $q) => $q->where('department_id', $employee->department_id));
+                        $qTravel->whereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $q) => $q->where('department_id', $employee->department_id));
+                    }
                 }
             }
 
@@ -93,8 +119,9 @@ class DashboardWelcomeBannerWidget extends Widget
             'employee' => $employee,
             'isExecutive' => $isExecutive,
             'isAllAccess' => $isAllAccess,
-            'isDivisionHead' => ($user?->hasRole('Division Head') ?? false) && ! $isHrOrAdmin,
-            'isManager' => $user?->hasRole('Manager') ?? false,
+            'isBusinessDivisionHead' => $isBusinessDivisionHead,
+            'isDivisionHead' => (($user?->hasRole('Division Head') ?? false) || $isBusinessDivisionHead) && ! $isHrOrAdmin,
+            'isManager' => ($user?->hasRole('Manager') ?? false) && ! $isBusinessDivisionHead,
             'isSupervisor' => $user?->hasRole('Supervisor') ?? false,
             'isHrOrAdmin' => $isHrOrAdmin,
             'isStaff' => $user && $user->hasRole('Staff') && ! $isExecutive,

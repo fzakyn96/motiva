@@ -43,6 +43,55 @@ class OfficialTravelRecap extends Model
     protected static function booted(): void
     {
         static::creating(function (OfficialTravelRecap $recap): void {
+            $setting = ReimbursementSetting::current();
+            $ids = is_array($recap->business_trip_ids) ? $recap->business_trip_ids : [];
+            if ($recap->business_trip_id && ! in_array($recap->business_trip_id, $ids)) {
+                $ids[] = $recap->business_trip_id;
+            }
+            $trips = ! empty($ids)
+                ? BusinessTrip::with(['memo.department', 'sppds.employee.department'])->whereIn('id', $ids)->get()
+                : collect();
+            $firstTrip = $trips->first();
+            $allSppds = $trips->flatMap->sppds;
+
+            if (empty($recap->department_id)) {
+                $recap->department_id = $allSppds->first()?->employee?->department_id
+                    ?? $firstTrip?->memo?->department_id
+                    ?? Department::where('code', 'MESI')->value('id')
+                    ?? Department::value('id');
+            }
+
+            $rawDate = $allSppds->pluck('departure_date')->filter()->sort()->first()
+                ?? $firstTrip?->start_date
+                ?? now();
+            $periodDate = \Carbon\Carbon::parse($rawDate)->locale('id');
+
+            if (empty($recap->period_month)) {
+                $recap->period_month = $periodDate->translatedFormat('F');
+            }
+
+            if (empty($recap->period_label)) {
+                $recap->period_label = $periodDate->translatedFormat('F Y');
+            }
+
+            if (empty($recap->work_name)) {
+                $unitNames = $allSppds->map(fn ($s) => $s->employee?->department?->name)->filter()->unique()->values();
+                if ($unitNames->isEmpty() && $recap->department_id) {
+                    $deptName = Department::whereKey($recap->department_id)->value('name');
+                    if ($deptName) {
+                        $unitNames = collect([$deptName]);
+                    }
+                }
+                if ($unitNames->isEmpty() && $firstTrip?->memo?->department?->name) {
+                    $unitNames = collect([$firstTrip->memo->department->name]);
+                }
+                $recap->work_name = 'Pekerjaan ' . ($unitNames->isNotEmpty() ? $unitNames->implode(', ') : ($firstTrip?->activity_name ?: 'Perjalanan Dinas'));
+            }
+
+            if ($recap->manfee_percent === null) {
+                $recap->manfee_percent = $setting->travel_manfee_percent;
+            }
+
             $sig = $recap->resolveSignatories();
 
             if (empty($recap->prepared_by_name) && ! empty($sig['prepared_by'])) {
@@ -63,6 +112,24 @@ class OfficialTravelRecap extends Model
             if (empty($recap->approved_by_name) && ! empty($sig['approved_by'])) {
                 $recap->approved_by_name = $sig['approved_by']->name;
                 $recap->approved_by_position = $sig['approved_by']->position?->name ?? 'Division Head';
+            }
+        });
+
+        static::deleting(function (OfficialTravelRecap $recap): void {
+            $recap->items()->delete();
+
+            ApprovalRequest::where('document_type', static::class)
+                ->where('document_id', $recap->id)
+                ->get()
+                ->each(function (ApprovalRequest $req): void {
+                    $req->steps()->delete();
+                    $req->delete();
+                });
+
+            if (\Illuminate\Support\Facades\Schema::hasTable('document_signatures')) {
+                DocumentSignature::where('document_type', static::class)
+                    ->where('document_id', $recap->id)
+                    ->delete();
             }
         });
     }
@@ -110,7 +177,9 @@ class OfficialTravelRecap extends Model
     public function recalculateTotals(): void
     {
         $totalWorkCost = (float) $this->items()->sum('amount');
-        $percent = (float) ($this->manfee_percent ?? ReimbursementSetting::current()->travel_manfee_percent);
+        $maxPercent = (float) ReimbursementSetting::current()->travel_manfee_percent;
+        $rawPercent = (float) ($this->manfee_percent ?? $maxPercent);
+        $percent = max(0.0, min($rawPercent, $maxPercent));
         $manfeeAmount = round($totalWorkCost * ($percent / 100), 0);
 
         $this->total_work_cost = $totalWorkCost;
@@ -141,17 +210,22 @@ class OfficialTravelRecap extends Model
             return null;
         }
 
-        $periodMonth = sprintf('%04d-%02d', $year, $month);
+        $periodMonthCode = sprintf('%04d-%02d', $year, $month);
         $periodLabel = $start->copy()->locale('id')->translatedFormat('F Y');
         $monthNameId = $start->copy()->locale('id')->translatedFormat('F');
 
         $tripIds = $approvedCosts->pluck('sppd.business_trip_id')->filter()->unique()->values()->all();
         $firstSppd = $approvedCosts->first()->sppd;
-        $departmentId = $firstSppd?->employee?->department_id ?? $firstSppd?->businessTrip?->memo?->department_id;
+        $departmentId = $firstSppd?->employee?->department_id
+            ?? $firstSppd?->businessTrip?->memo?->department_id
+            ?? Department::where('code', 'MESI')->value('id')
+            ?? Department::value('id');
+        $deptName = $departmentId ? Department::whereKey($departmentId)->value('name') : null;
+        $workName = 'Pekerjaan ' . ($deptName ?: 'Management Enterprise System Infrastructure Information (MESI)');
         $setting = ReimbursementSetting::current();
 
-        $recap = static::where(function ($q) use ($periodMonth, $periodLabel, $monthNameId, $year) {
-            $q->where('period_month', $periodMonth)
+        $recap = static::where(function ($q) use ($periodMonthCode, $periodLabel, $monthNameId, $year) {
+            $q->where('period_month', $periodMonthCode)
                 ->orWhere('period_label', $periodLabel)
                 ->orWhere(function ($mq) use ($monthNameId, $year) {
                     $mq->where('period_month', $monthNameId)
@@ -170,18 +244,21 @@ class OfficialTravelRecap extends Model
                 'department_id' => $departmentId,
                 'business_trip_id' => $tripIds[0] ?? null,
                 'business_trip_ids' => $tripIds,
-                'work_name' => 'Rekap Perjalanan Dinas ' . $periodLabel,
+                'work_name' => $workName,
                 'period_label' => $periodLabel,
-                'period_month' => $periodMonth,
+                'period_month' => $monthNameId,
                 'manfee_percent' => $setting->travel_manfee_percent,
                 'creator_id' => $creatorId ?? auth()->id(),
             ]);
         } else {
             $recap->update([
+                'department_id' => $departmentId ?? $recap->department_id,
                 'business_trip_id' => $tripIds[0] ?? $recap->business_trip_id,
                 'business_trip_ids' => $tripIds,
-                'period_month' => $periodMonth,
+                'work_name' => $workName,
+                'period_month' => $monthNameId,
                 'period_label' => $periodLabel,
+                'manfee_percent' => $recap->manfee_percent ?? $setting->travel_manfee_percent,
             ]);
         }
 

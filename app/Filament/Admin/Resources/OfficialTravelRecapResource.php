@@ -179,32 +179,28 @@ class OfficialTravelRecapResource extends Resource
                                 }
                             })
                             ->columnSpanFull(),
-                        Forms\Components\TextInput::make('work_name')
-                            ->label('Nama Pekerjaan')
-                            ->placeholder('Contoh: Pekerjaan Jakarta')
-                            ->required()
-                            ->columnSpanFull(),
+                        Forms\Components\Hidden::make('work_name'),
+                        Forms\Components\Hidden::make('period_month'),
+                        Forms\Components\Hidden::make('period_label'),
                         Forms\Components\Select::make('department_id')
                             ->label('Unit Kerja')
                             ->relationship('department', 'name')
-                            ->searchable()
-                            ->preload(),
-                        Forms\Components\TextInput::make('period_month')
-                            ->label('Bulan Periode (Kolom Tabel)')
-                            ->placeholder('Contoh: April')
-                            ->required()
-                            ->maxLength(50),
-                        Forms\Components\TextInput::make('period_label')
-                            ->label('Judul Periode')
-                            ->placeholder('Contoh: April 2026')
-                            ->required()
-                            ->maxLength(100),
+                            ->default(fn () => \App\Models\Department::where('code', 'MESI')->value('id') ?? \App\Models\Department::first()?->id)
+                            ->disabled()
+                            ->dehydrated(),
                         Forms\Components\TextInput::make('manfee_percent')
                             ->label('Persentase Management Fee (%)')
                             ->numeric()
                             ->step('0.01')
                             ->suffix('%')
-                            ->default((float) $setting->travel_manfee_percent)
+                            ->default(fn () => (float) ReimbursementSetting::current()->travel_manfee_percent)
+                            ->minValue(0)
+                            ->maxValue(fn () => (float) ReimbursementSetting::current()->travel_manfee_percent)
+                            ->helperText(fn () => 'Maksimal ' . rtrim(rtrim(number_format((float) ReimbursementSetting::current()->travel_manfee_percent, 2, ',', '.'), '0'), ',') . '% sesuai pengaturan Management Fee.')
+                            ->validationMessages([
+                                'max' => 'Persentase Management Fee tidak boleh melebihi batas maksimal pengaturan (:max%).',
+                                'min' => 'Persentase Management Fee tidak boleh kurang dari 0%.',
+                            ])
                             ->required(),
                     ])
                     ->columns(['default' => 1, 'md' => 2]),
@@ -354,14 +350,19 @@ class OfficialTravelRecapResource extends Resource
                                     return 'Ditolak';
                                 }
 
-                                return $req->currentStep()?->policyStep?->resolver_class === \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class
+                                $resolverClass = $req->currentStep()?->policyStep?->resolver_class;
+                                if ($resolverClass === \App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver::class) {
+                                    return 'Menunggu Division Head Perkasa';
+                                }
+
+                                return $resolverClass === \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class
                                     ? 'Menunggu Division Head'
                                     : 'Menunggu Pemeriksaan Manajer';
                             })
                             ->color(fn (string $state): string => match ($state) {
                                 'Disetujui' => 'success',
                                 'Ditolak' => 'danger',
-                                'Menunggu Pemeriksaan Manajer', 'Menunggu Division Head' => 'warning',
+                                'Menunggu Division Head Perkasa', 'Menunggu Pemeriksaan Manajer', 'Menunggu Division Head' => 'warning',
                                 default => 'gray',
                             }),
                         Infolists\Components\TextEntry::make('total_work_cost')->label('Total Biaya Pekerjaan')->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
@@ -401,6 +402,8 @@ class OfficialTravelRecapResource extends Resource
                                     ->columnSpanFull(),
                             ]),
                     ]),
+
+                RecapTableSupport::signatureVerificationInfolistSection(),
             ]);
     }
 

@@ -178,6 +178,20 @@
                     <strong>Digital Signature Token:</strong><br>
                     {{ $signature->token }}
                 </div>
+
+                @if($document)
+                    <div style="margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px;">
+                        <a href="{{ route('signatures.download', ['token' => $signature->token]) }}"
+                           style="flex: 1 1 200px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 16px; border-radius: 10px; background: #059669; color: #ffffff; font-size: 13.5px; font-weight: 700; text-decoration: none; text-align: center; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25);">
+                            ⬇ Unduh Dokumen Resmi (PDF)
+                        </a>
+                        <a href="{{ route('signatures.download', ['token' => $signature->token, 'inline' => 1]) }}"
+                           target="_blank"
+                           style="flex: 1 1 160px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 16px; border-radius: 10px; background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; font-size: 13.5px; font-weight: 600; text-decoration: none; text-align: center;">
+                            👁 Lihat Dokumen (PDF)
+                        </a>
+                    </div>
+                @endif
             </div>
         @else
             <div class="header header-invalid">

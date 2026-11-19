@@ -132,6 +132,20 @@ class TransportAccommodationRecapResource extends Resource
                             ->default(fn () => Carbon::now()->locale('id')->translatedFormat('F Y'))
                             ->required()
                             ->maxLength(50),
+                        Forms\Components\TextInput::make('manfee_percent')
+                            ->label('Persentase Management Fee (%)')
+                            ->numeric()
+                            ->step('0.01')
+                            ->suffix('%')
+                            ->default(fn () => (float) ReimbursementSetting::current()->transport_manfee_percent)
+                            ->minValue(0)
+                            ->maxValue(fn () => (float) ReimbursementSetting::current()->transport_manfee_percent)
+                            ->helperText(fn () => 'Maksimal ' . rtrim(rtrim(number_format((float) ReimbursementSetting::current()->transport_manfee_percent, 2, ',', '.'), '0'), ',') . '% sesuai pengaturan Management Fee.')
+                            ->validationMessages([
+                                'max' => 'Persentase Management Fee tidak boleh melebihi batas maksimal pengaturan (:max%).',
+                                'min' => 'Persentase Management Fee tidak boleh kurang dari 0%.',
+                            ])
+                            ->required(),
                     ])
                     ->columns(['default' => 1, 'md' => 2]),
 
@@ -478,14 +492,19 @@ class TransportAccommodationRecapResource extends Resource
                                     return 'Ditolak';
                                 }
 
-                                return $req->currentStep()?->policyStep?->resolver_class === \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class
+                                $resolverClass = $req->currentStep()?->policyStep?->resolver_class;
+                                if ($resolverClass === \App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver::class) {
+                                    return 'Menunggu Division Head Perkasa';
+                                }
+
+                                return $resolverClass === \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class
                                     ? 'Menunggu Division Head'
                                     : 'Menunggu Pemeriksaan Manajer';
                             })
                             ->color(fn (string $state): string => match ($state) {
                                 'Disetujui' => 'success',
                                 'Ditolak' => 'danger',
-                                'Menunggu Pemeriksaan Manajer', 'Menunggu Division Head' => 'warning',
+                                'Menunggu Division Head Perkasa', 'Menunggu Pemeriksaan Manajer', 'Menunggu Division Head' => 'warning',
                                 default => 'gray',
                             }),
                         Infolists\Components\TextEntry::make('total_cost')->label('Total Biaya')->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-'),
@@ -529,6 +548,8 @@ class TransportAccommodationRecapResource extends Resource
                                     ->columnSpanFull(),
                             ]),
                     ]),
+
+                RecapTableSupport::signatureVerificationInfolistSection(),
             ]);
     }
 

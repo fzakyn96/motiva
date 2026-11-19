@@ -34,15 +34,19 @@ class ExecutivePipelineChartWidget extends ChartWidget
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
-        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']);
+        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']) || (bool) $employee?->isBusinessDivisionHead();
 
         // 1. Memo Query
         $memoQuery = Memo::query();
         if (! $isAllAccess && $employee) {
             $memoQuery->where(function (Builder $q) use ($employee) {
-                $q->where('department_id', $employee->department_id)
-                    ->orWhere('creator_employee_id', $employee->id)
-                    ->orWhereHas('creator', fn (Builder $cq) => $cq->where('manager_id', $employee->id));
+                if ($employee->work_area_id) {
+                    $q->whereHas('creator', fn (Builder $cq) => $cq->where('work_area_id', $employee->work_area_id));
+                } else {
+                    $q->where('department_id', $employee->department_id)
+                        ->orWhere('creator_employee_id', $employee->id)
+                        ->orWhereHas('creator', fn (Builder $cq) => $cq->where('manager_id', $employee->id));
+                }
             });
         }
 
@@ -54,9 +58,13 @@ class ExecutivePipelineChartWidget extends ChartWidget
         $sppdQuery = Sppd::query();
         if (! $isAllAccess && $employee) {
             $sppdQuery->whereHas('employee', function (Builder $q) use ($employee) {
-                $q->where('department_id', $employee->department_id)
-                    ->orWhere('manager_id', $employee->id)
-                    ->orWhere('id', $employee->id);
+                if ($employee->work_area_id) {
+                    $q->where('work_area_id', $employee->work_area_id);
+                } else {
+                    $q->where('department_id', $employee->department_id)
+                        ->orWhere('manager_id', $employee->id)
+                        ->orWhere('id', $employee->id);
+                }
             });
         }
 
