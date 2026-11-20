@@ -41,12 +41,17 @@ class SppdCost extends Model
 
         static::updated(function (SppdCost $cost) {
             if ($cost->wasChanged('status') && $cost->status === 'approved') {
-                $cost->loadMissing('sppd');
+                $cost->loadMissing('sppd.employee');
                 $date = $cost->sppd?->departure_date
                     ? \Carbon\Carbon::parse($cost->sppd->departure_date)
                     : ($cost->created_at ?? now());
 
-                OfficialTravelRecap::syncForMonth((int) $date->month, (int) $date->year, $cost->creator_id);
+                OfficialTravelRecap::syncForMonth(
+                    (int) $date->month,
+                    (int) $date->year,
+                    $cost->creator_id,
+                    $cost->sppd?->employee?->work_area_id ? (int) $cost->sppd->employee->work_area_id : null
+                );
             }
         });
     }

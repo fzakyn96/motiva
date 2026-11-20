@@ -201,69 +201,76 @@ class SppdLogResource extends Resource
     {
         return $table
             ->defaultSort('created_at', 'desc')
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Waktu Dihapus')
-                    ->dateTime('d/m/Y H:i')
-                    ->sortable()
-                    ->icon('heroicon-m-clock')
-                    ->color('gray'),
+                Tables\Columns\Layout\Split::make([
+                    Tables\Columns\TextColumn::make('sppd_number')
+                        ->label('Nomor SPPD')
+                        ->searchable()
+                        ->sortable()
+                        ->weight(FontWeight::Bold)
+                        ->color('primary')
+                        ->copyable()
+                        ->placeholder('-'),
 
-                Tables\Columns\TextColumn::make('sppd_number')
-                    ->label('Nomor SPPD')
-                    ->searchable()
-                    ->sortable()
-                    ->weight(FontWeight::Bold)
-                    ->color('primary')
-                    ->copyable()
-                    ->placeholder('-'),
+                    Tables\Columns\TextColumn::make('employee_name')
+                        ->label('Pegawai')
+                        ->searchable()
+                        ->weight(FontWeight::SemiBold),
 
-                Tables\Columns\TextColumn::make('nomor_memo')
-                    ->label('Nomor Memo')
-                    ->searchable()
-                    ->badge()
-                    ->color('gray')
-                    ->placeholder('-'),
+                    Tables\Columns\TextColumn::make('sppd_status')
+                        ->label('Status SPPD')
+                        ->badge()
+                        ->grow(false)
+                        ->formatStateUsing(fn (?string $state): string => match ($state) {
+                            'draft' => 'Draf',
+                            'pending' => 'Menunggu',
+                            'approved' => 'Disetujui',
+                            'rejected' => 'Ditolak',
+                            default => ucfirst((string) $state),
+                        })
+                        ->color(fn (?string $state): string => match ($state) {
+                            'draft' => 'gray',
+                            'pending' => 'warning',
+                            'approved' => 'success',
+                            'rejected' => 'danger',
+                            default => 'gray',
+                        }),
+                ])->from('md'),
 
-                Tables\Columns\TextColumn::make('employee_name')
-                    ->label('Pegawai')
-                    ->searchable()
-                    ->description(fn (SppdLog $record): string => $record->department_name ? "Unit: {$record->department_name}" : '')
-                    ->weight(FontWeight::SemiBold),
+                Tables\Columns\Layout\Panel::make([
+                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2, 'md' => 4])
+                        ->schema([
+                            Tables\Columns\TextColumn::make('nomor_memo')
+                                ->description('Nomor Memo', position: 'above')
+                                ->searchable()
+                                ->badge()
+                                ->color('gray')
+                                ->placeholder('-'),
 
-                Tables\Columns\TextColumn::make('destination')
-                    ->label('Tujuan')
-                    ->searchable()
-                    ->placeholder('-'),
+                            Tables\Columns\TextColumn::make('destination')
+                                ->description('Tujuan', position: 'above')
+                                ->searchable()
+                                ->placeholder('-'),
 
-                Tables\Columns\TextColumn::make('sppd_status')
-                    ->label('Status SPPD')
-                    ->badge()
-                    ->formatStateUsing(fn (?string $state): string => match ($state) {
-                        'draft' => 'Draf',
-                        'pending' => 'Menunggu',
-                        'approved' => 'Disetujui',
-                        'rejected' => 'Ditolak',
-                        default => ucfirst((string) $state),
-                    })
-                    ->color(fn (?string $state): string => match ($state) {
-                        'draft' => 'gray',
-                        'pending' => 'warning',
-                        'approved' => 'success',
-                        'rejected' => 'danger',
-                        default => 'gray',
-                    }),
+                            Tables\Columns\TextColumn::make('deleted_by_name')
+                                ->description('Dihapus Oleh', position: 'above')
+                                ->searchable(),
 
-                Tables\Columns\TextColumn::make('deleted_by_name')
-                    ->label('Dihapus Oleh')
-                    ->searchable()
-                    ->description(fn (SppdLog $record): string => $record->deleted_by_role ? "Role: {$record->deleted_by_role}" : ''),
+                            Tables\Columns\TextColumn::make('created_at')
+                                ->description('Waktu Dihapus', position: 'above')
+                                ->dateTime('d/m/Y H:i')
+                                ->sortable()
+                                ->icon('heroicon-m-clock')
+                                ->color('gray'),
 
-                Tables\Columns\TextColumn::make('deletion_reason')
-                    ->label('Alasan Penghapusan')
-                    ->searchable()
-                    ->wrap()
-                    ->color('danger'),
+                            Tables\Columns\TextColumn::make('deletion_reason')
+                                ->description('Alasan Penghapusan', position: 'above')
+                                ->searchable()
+                                ->wrap()
+                                ->color('danger'),
+                        ]),
+                ])->collapsible(),
             ])
             ->filters([])
             ->actions([

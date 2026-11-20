@@ -851,4 +851,290 @@ class ReimbursementRecapTest extends TestCase
         $this->assertStringContainsString('Khairul Khitam', $travelHtml);
         $this->assertStringContainsString('Business Division Head', $travelHtml);
     }
+
+    public function test_multi_area_recap_requires_all_area_managers_approval_and_isolates_hr_by_work_area(): void
+    {
+        $orgPkj = Organization::create(['name' => 'PT Permata Karya Jasa', 'code' => 'PKJ']);
+        $orgPgn = Organization::create(['name' => 'PT Perusahaan Gas Negara (Persero) Tbk.', 'code' => 'PGN']);
+        $dept = Department::create(['organization_id' => $orgPgn->id, 'name' => 'MESI', 'code' => 'MESI']);
+
+        $divPos = Position::create(['name' => 'Division Head AIMS', 'code' => 'DIV-AIMS', 'level' => 0]);
+        $bdhPos = Position::create(['name' => 'Business Division Head', 'code' => 'BDH-PKJ', 'level' => 1]);
+        $mgrPos = Position::create(['name' => 'Manager Area', 'code' => 'MGR', 'level' => 1]);
+        $spvPos = Position::create(['name' => 'Supervisor', 'code' => 'SPV', 'level' => 2]);
+        $stfPos = Position::create(['name' => 'Staff', 'code' => 'STF', 'level' => 4]);
+
+        $dummyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+        $divUser = User::factory()->create(['name' => 'Herry Rachmadi', 'signature_type' => 'draw', 'signature_data' => $dummyPng]);
+        $divUser->assignRole('Division Head');
+        $divEmp = Employee::create([
+            'user_id' => $divUser->id,
+            'organization_id' => $orgPgn->id,
+            'department_id' => $dept->id,
+            'position_id' => $divPos->id,
+            'identity_number' => 'PGN-001',
+            'name' => 'Herry Rachmadi',
+        ]);
+
+        $bdhUser = User::factory()->create(['name' => 'Khairul Khitam', 'signature_type' => 'draw', 'signature_data' => $dummyPng]);
+        $bdhUser->assignRole('Manager');
+        Employee::create([
+            'user_id' => $bdhUser->id,
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'position_id' => $bdhPos->id,
+            'identity_number' => '125000005',
+            'name' => 'Khairul Khitam',
+        ]);
+
+        // Manager Jakarta & Bojonegara
+        $mgrJktUser = User::factory()->create(['name' => 'M Nuramzan Iftari', 'signature_type' => 'draw', 'signature_data' => $dummyPng]);
+        $mgrJktUser->assignRole('Manager');
+        $mgrJktEmp = Employee::create([
+            'user_id' => $mgrJktUser->id,
+            'organization_id' => $orgPgn->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+            'manager_id' => $divEmp->id,
+            'identity_number' => 'PGN-002',
+            'name' => 'M Nuramzan Iftari',
+        ]);
+
+        $mgrBjnUser = User::factory()->create(['name' => 'Mahar Prasetyo', 'signature_type' => 'draw', 'signature_data' => $dummyPng]);
+        $mgrBjnUser->assignRole('Manager');
+        $mgrBjnEmp = Employee::create([
+            'user_id' => $mgrBjnUser->id,
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'position_id' => $mgrPos->id,
+            'manager_id' => $divEmp->id,
+            'identity_number' => 'NO-20001',
+            'name' => 'Mahar Prasetyo',
+        ]);
+
+        $areaJkt = \App\Models\WorkArea::create([
+            'department_id' => $dept->id,
+            'code' => 'JKT',
+            'name' => 'Jakarta',
+            'coordinator_employee_id' => $mgrJktEmp->id,
+        ]);
+        $areaBjn = \App\Models\WorkArea::create([
+            'department_id' => $dept->id,
+            'code' => 'BJN',
+            'name' => 'Bojonegara',
+            'coordinator_employee_id' => $mgrBjnEmp->id,
+        ]);
+        $mgrJktEmp->update(['work_area_id' => $areaJkt->id]);
+        $mgrBjnEmp->update(['work_area_id' => $areaBjn->id]);
+
+        // Supervisor Jakarta (Area JKT punya SPV, Area BJN TIDAK punya SPV)
+        $spvJktUser = User::factory()->create(['name' => 'Didiet Pradityo', 'signature_type' => 'draw', 'signature_data' => $dummyPng]);
+        $spvJktUser->assignRole('Supervisor');
+        $spvJktEmp = Employee::create([
+            'user_id' => $spvJktUser->id,
+            'organization_id' => $orgPgn->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaJkt->id,
+            'position_id' => $spvPos->id,
+            'manager_id' => $mgrJktEmp->id,
+            'identity_number' => 'PGN-004',
+            'name' => 'Didiet Pradityo',
+        ]);
+
+        // HR Jakarta & HR Bojonegara
+        $hrJktUser = User::factory()->create(['name' => 'Maria Ulfah']);
+        $hrJktUser->assignRole('HR');
+        $hrJktEmp = Employee::create([
+            'user_id' => $hrJktUser->id,
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaJkt->id,
+            'position_id' => $stfPos->id,
+            'manager_id' => $spvJktEmp->id,
+            'identity_number' => 'HR-JKT',
+            'name' => 'Maria Ulfah',
+        ]);
+
+        $hrBjnUser = User::factory()->create(['name' => 'HR Bojonegara']);
+        $hrBjnUser->assignRole('HR');
+        $hrBjnEmp = Employee::create([
+            'user_id' => $hrBjnUser->id,
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaBjn->id,
+            'position_id' => $stfPos->id,
+            'manager_id' => $mgrBjnEmp->id,
+            'identity_number' => 'HR-BJN',
+            'name' => 'HR Bojonegara',
+        ]);
+
+        $staffJkt = Employee::create([
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaJkt->id,
+            'position_id' => $stfPos->id,
+            'manager_id' => $spvJktEmp->id,
+            'identity_number' => 'STF-JKT',
+            'name' => 'Chairunnisa',
+        ]);
+
+        $staffBjn = Employee::create([
+            'organization_id' => $orgPkj->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $areaBjn->id,
+            'position_id' => $stfPos->id,
+            'manager_id' => $mgrBjnEmp->id,
+            'identity_number' => 'STF-BJN',
+            'name' => 'Diah Nur Cahyani',
+        ]);
+
+        // 1. Verifikasi format nomor dokumen 0000/MESI/KODEAREA/BULAN/TAHUN & isolasi data HR antar area
+        $memoJkt = \App\Models\Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $hrJktEmp->id,
+            'to_recipient' => 'Manager Jakarta',
+            'agenda' => 'Dinas Area Jakarta',
+            'location' => 'Bandung',
+            'date' => '2026-11-10',
+            'assignment_start_date' => '2026-11-10',
+            'assignment_end_date' => '2026-11-12',
+            'content' => 'Dinas JKT',
+            'participants' => [$staffJkt->id],
+            'status' => 'approved',
+        ]);
+        $memoBjn = \App\Models\Memo::create([
+            'department_id' => $dept->id,
+            'creator_employee_id' => $hrBjnEmp->id,
+            'to_recipient' => 'Manager Bojonegara',
+            'agenda' => 'Dinas Area Bojonegara',
+            'location' => 'Cilegon',
+            'date' => '2026-11-11',
+            'assignment_start_date' => '2026-11-11',
+            'assignment_end_date' => '2026-11-13',
+            'content' => 'Dinas BJN',
+            'participants' => [$staffBjn->id],
+            'status' => 'approved',
+        ]);
+
+        $this->assertMatchesRegularExpression('#^\d{4}/MESI/JKT/\d{2}/\d{4}$#', (string) $memoJkt->nomor_memo);
+        $this->assertMatchesRegularExpression('#^\d{4}/MESI/BJN/\d{2}/\d{4}$#', (string) $memoBjn->nomor_memo);
+
+        $sppdJkt = Sppd::where('employee_id', $staffJkt->id)->firstOrFail();
+        $sppdBjn = Sppd::where('employee_id', $staffBjn->id)->firstOrFail();
+
+        // Area JKT memiliki SPV -> SPPD melalui 2 step (SPV -> Manager), dan cetakan SPPD menampilkan "Mengetahui,"
+        $sppdJkt->update(['status' => 'pending']);
+        $reqSppdJkt = $sppdJkt->approvalRequests()->firstOrFail();
+        $this->assertCount(2, $reqSppdJkt->steps);
+        (new \App\Services\Approval\ApprovalResolver())->approve($reqSppdJkt, $spvJktEmp, 'OK SPV JKT');
+        (new \App\Services\Approval\ApprovalResolver())->approve($reqSppdJkt->fresh(), $mgrJktEmp, 'OK MGR JKT');
+        $sppdJkt->refresh();
+        $this->assertMatchesRegularExpression('#^\d{4}/MESI/JKT/\d{2}/\d{4}$#', (string) $sppdJkt->sppd_number);
+
+        $jktPrintHtml = view('sppds.print', [
+            'sppd' => $sppdJkt,
+            'signer' => $mgrJktEmp,
+            'signerName' => $mgrJktEmp->name,
+            'signerPosition' => $mgrJktEmp->position->name,
+        ])->render();
+        $this->assertStringContainsString('Mengetahui,', $jktPrintHtml);
+        $this->assertStringContainsString('Didiet Pradityo', $jktPrintHtml);
+
+        // Area BJN TIDAK memiliki SPV -> SPPD langsung 1 step ke Manager BJN, dan cetakan SPPD TIDAK menampilkan "Mengetahui,"
+        $sppdBjn->update(['status' => 'pending']);
+        $reqSppdBjn = $sppdBjn->approvalRequests()->firstOrFail();
+        $this->assertCount(1, $reqSppdBjn->steps);
+        (new \App\Services\Approval\ApprovalResolver())->approve($reqSppdBjn, $mgrBjnEmp, 'OK MGR BJN');
+        $sppdBjn->refresh();
+        $this->assertMatchesRegularExpression('#^\d{4}/MESI/BJN/\d{2}/\d{4}$#', (string) $sppdBjn->sppd_number);
+
+        $bjnPrintHtml = view('sppds.print', [
+            'sppd' => $sppdBjn,
+            'signer' => $mgrBjnEmp,
+            'signerName' => $mgrBjnEmp->name,
+            'signerPosition' => $mgrBjnEmp->position->name,
+        ])->render();
+        $this->assertStringNotContainsString('Mengetahui,', $bjnPrintHtml);
+
+        // 2. Isolasi data HR: HR JKT tidak bisa melihat Memo, SPPD, atau Biaya SPPD milik Area BJN
+        $this->actingAs($hrJktUser);
+        $this->assertTrue(\App\Filament\Admin\Resources\MemoResource::canView($memoJkt));
+        $this->assertFalse(\App\Filament\Admin\Resources\MemoResource::canView($memoBjn));
+        $this->assertTrue(\App\Filament\Admin\Resources\SppdResource::canView($sppdJkt));
+        $this->assertFalse(\App\Filament\Admin\Resources\SppdResource::canView($sppdBjn));
+        $this->assertSame([$sppdJkt->id], \App\Filament\Admin\Resources\SppdCostResource::getEloquentQuery()->pluck('id')->all());
+
+        // 3. Biaya SPPD disetujui di masing-masing area -> Sinkronisasi per HR area masuk ke 1 Rekap Perjalanan Dinas yang sama
+        $costJkt = SppdCost::create([
+            'sppd_id' => $sppdJkt->id,
+            'creator_id' => $hrJktUser->id,
+            'official_days' => 3,
+            'total_cost' => 1500000,
+            'status' => 'approved',
+        ]);
+        $costBjn = SppdCost::create([
+            'sppd_id' => $sppdBjn->id,
+            'creator_id' => $hrBjnUser->id,
+            'official_days' => 3,
+            'total_cost' => 2000000,
+            'status' => 'approved',
+        ]);
+
+        // HR Jakarta sinkronisasi bulan November 2026 -> hanya menyinkronkan pegawai Jakarta
+        $recapAfterJkt = OfficialTravelRecap::syncForMonth(11, 2026, $hrJktUser->id, $areaJkt->id);
+        $this->assertNotNull($recapAfterJkt);
+        $this->assertMatchesRegularExpression('#^\d{4}/MESI/JKT/\d{2}/\d{4}$#', (string) $recapAfterJkt->recap_number);
+        $this->assertCount(1, $recapAfterJkt->items);
+
+        // HR Bojonegara belum melihat rekap sebelum ada data Bojonegara di dalamnya
+        $this->actingAs($hrBjnUser);
+        $this->assertFalse(OfficialTravelRecapResource::canView($recapAfterJkt));
+
+        // HR Bojonegara sinkronisasi bulan November 2026 -> tergabung ke 1 dokumen rekap yang sama tanpa menghapus item Jakarta
+        $recapAfterBjn = OfficialTravelRecap::syncForMonth(11, 2026, $hrBjnUser->id, $areaBjn->id);
+        $this->assertSame($recapAfterJkt->id, $recapAfterBjn->id);
+        $this->assertCount(2, $recapAfterBjn->items()->get());
+        $this->assertEquals(3500000.0, (float) $recapAfterBjn->fresh()->total_work_cost);
+
+        // 4. Manajer seluruh area dapat melihat seluruh rekap, dan ke-2 Manajer area wajib menyetujui sebelum lanjut ke BDH & Division Head PGN
+        $approvalReq = $recapAfterBjn->ensureApprovalRequestExists($hrJktEmp);
+        // 2 Manager steps (JKT + BJN) + 1 BDH step + 1 Division Head step = 4 steps
+        $this->assertCount(4, $approvalReq->steps);
+
+        $this->actingAs($mgrJktUser);
+        $this->assertContains($approvalReq->id, OfficialTravelApprovalResource::getEloquentQuery()->pluck('id')->all());
+        (new \App\Services\Approval\ApprovalResolver())->approve($approvalReq, $mgrJktEmp, 'Disetujui Manager JKT');
+
+        // Manager JKT tidak boleh menyetujui step Manager ke-2 (milik Manager BJN)
+        $this->assertFalse((new \App\Services\Approval\ApprovalResolver())->canApprove($approvalReq->fresh(), $mgrJktEmp));
+        $this->assertTrue((new \App\Services\Approval\ApprovalResolver())->canApprove($approvalReq->fresh(), $mgrBjnEmp));
+
+        $this->actingAs($mgrBjnUser);
+        $this->assertContains($approvalReq->id, OfficialTravelApprovalResource::getEloquentQuery()->pluck('id')->all());
+        (new \App\Services\Approval\ApprovalResolver())->approve($approvalReq->fresh(), $mgrBjnEmp, 'Disetujui Manager BJN');
+
+        // Lanjut ke Business Division Head Perkasa lalu Division Head PGN
+        (new \App\Services\Approval\ApprovalResolver())->approve($approvalReq->fresh(), $bdhUser->employee, 'Disetujui BDH Perkasa');
+        (new \App\Services\Approval\ApprovalResolver())->approve($approvalReq->fresh(), $divEmp, 'Disetujui Division Head PGN');
+
+        $this->assertSame('approved', $approvalReq->fresh()->status);
+
+        // Pastikan tanda tangan kedua Manajer area tercatat terpisah dan tampil di PDF
+        $this->assertDatabaseHas('document_signatures', [
+            'document_type' => OfficialTravelRecap::class,
+            'document_id' => $recapAfterBjn->id,
+            'employee_id' => $mgrJktEmp->id,
+            'role_type' => 'manager',
+        ]);
+        $this->assertDatabaseHas('document_signatures', [
+            'document_type' => OfficialTravelRecap::class,
+            'document_id' => $recapAfterBjn->id,
+            'employee_id' => $mgrBjnEmp->id,
+            'role_type' => 'manager',
+        ]);
+
+        $pdfResponse = $this->actingAs($divUser)->get(route('recaps.travel.print', $recapAfterBjn));
+        $pdfResponse->assertSuccessful();
+    }
 }

@@ -140,20 +140,7 @@ class Employee extends Model
                 $areaIds[] = (int) $doc->sppd->employee->work_area_id;
             }
         } elseif ($doc instanceof TransportAccommodationRecap || $doc instanceof OfficialTravelRecap) {
-            $tripIds = is_array($doc->business_trip_ids) ? $doc->business_trip_ids : [];
-            if ($doc->business_trip_id && ! in_array($doc->business_trip_id, $tripIds)) {
-                $tripIds[] = $doc->business_trip_id;
-            }
-            if (! empty($tripIds)) {
-                $sppdAreas = Sppd::whereIn('business_trip_id', $tripIds)
-                    ->with('employee')
-                    ->get()
-                    ->pluck('employee.work_area_id')
-                    ->filter()
-                    ->map(fn ($id) => (int) $id)
-                    ->all();
-                $areaIds = array_merge($areaIds, $sppdAreas);
-            }
+            $areaIds = BusinessTrip::resolveInvolvedWorkAreaIdsForRecap($doc);
         }
 
         if (empty($areaIds) && $request->requester?->work_area_id) {
@@ -164,6 +151,16 @@ class Employee extends Model
 
         if (empty($areaIds)) {
             return true;
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('work_areas')) {
+            $managedAreaIds = WorkArea::where('coordinator_employee_id', $this->id)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            if (! empty(array_intersect($managedAreaIds, $areaIds))) {
+                return true;
+            }
         }
 
         return in_array((int) $this->work_area_id, $areaIds, true);

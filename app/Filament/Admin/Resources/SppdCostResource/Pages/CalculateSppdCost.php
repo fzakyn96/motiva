@@ -31,7 +31,7 @@ class CalculateSppdCost extends Page implements HasForms
             \Filament\Actions\Action::make('back')
                 ->label('Kembali')
                 ->icon('heroicon-o-arrow-left')
-                ->color('gray')
+                ->color('info')
                 ->url(SppdCostResource::getUrl('index')),
         ];
     }
@@ -42,9 +42,13 @@ class CalculateSppdCost extends Page implements HasForms
             return collect([$this->record])->filter();
         }
 
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        $areaId = ($user && ! $user->hasAnyRole(['Superadmin', 'Admin'])) ? $user->employee?->work_area_id : null;
+
         return Sppd::with(['employee.position', 'cost', 'businessTrip.memo'])
             ->where('business_trip_id', $this->record->business_trip_id)
             ->where('status', 'approved')
+            ->when($areaId, fn ($q) => $q->whereHas('employee', fn ($eq) => $eq->where('work_area_id', $areaId)))
             ->orderBy('id')
             ->get();
     }

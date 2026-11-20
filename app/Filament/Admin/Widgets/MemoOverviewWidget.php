@@ -32,25 +32,29 @@ class MemoOverviewWidget extends BaseWidget
 
         return [
             Stat::make('Menunggu Persetujuan', $pendingCount)
-                ->description($pendingCount > 0 ? 'Perlu tindakan review segera' : 'Semua memo telah ditinjau')
+                ->extraAttributes(['class' => 'motiva-hide-mobile-stat-card hidden sm:block'])
+                ->description($pendingCount > 0 ? 'Review segera' : 'Semua telah ditinjau')
                 ->descriptionIcon($pendingCount > 0 ? 'heroicon-m-clock' : 'heroicon-m-check-circle')
                 ->color($pendingCount > 0 ? 'warning' : 'gray')
                 ->url(MemoApprovalResource::getUrl('index', ['activeTab' => 'pending'])),
 
             Stat::make('Disetujui', $approvedCount)
-                ->description('Pengajuan memo disetujui')
+                ->extraAttributes(['class' => 'motiva-hide-mobile-stat-card hidden sm:block'])
+                ->description('Pengajuan disetujui')
                 ->descriptionIcon('heroicon-m-check-badge')
                 ->color('success')
                 ->url(MemoApprovalResource::getUrl('index', ['activeTab' => 'approved'])),
 
             Stat::make('Ditolak', $rejectedCount)
-                ->description('Pengajuan memo ditolak')
+                ->extraAttributes(['class' => 'motiva-hide-mobile-stat-card hidden sm:block'])
+                ->description('Pengajuan ditolak')
                 ->descriptionIcon('heroicon-m-x-circle')
                 ->color($rejectedCount > 0 ? 'danger' : 'gray')
                 ->url(MemoApprovalResource::getUrl('index', ['activeTab' => 'rejected'])),
 
             Stat::make('Total Pengajuan', $totalCount)
-                ->description('Total pengajuan memo')
+                ->extraAttributes(['class' => 'motiva-hide-mobile-stat-card hidden sm:block'])
+                ->description('Total pengajuan')
                 ->descriptionIcon('heroicon-m-document-duplicate')
                 ->color('primary')
                 ->url(MemoApprovalResource::getUrl('index', ['activeTab' => 'all'])),

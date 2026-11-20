@@ -40,10 +40,11 @@ class ExecutiveOverviewWidget extends BaseWidget
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
         $isBusinessDivisionHead = (bool) $employee?->isBusinessDivisionHead();
-        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']) || $isBusinessDivisionHead;
+        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'Division Head']) || $isBusinessDivisionHead || ($user->hasRole('HR') && ! $employee?->work_area_id);
         $isHrOrAdmin = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
         $isDivisionHeadOnly = (($user?->hasRole('Division Head') ?? false) || $isBusinessDivisionHead) && ! $user?->hasAnyRole(['Superadmin', 'Admin', 'HR']);
         $isSupervisorOnly = $user?->hasRole('Supervisor') && ! $user->hasAnyRole(['Manager', 'Division Head', 'Superadmin', 'Admin', 'HR']);
+        $isManager = $user?->hasRole('Manager') ?? false;
 
         // 1. Pending Approvals
         $pendingMemo = ApprovalRequest::where('document_type', Memo::class)->where('status', 'pending');
@@ -70,15 +71,17 @@ class ExecutiveOverviewWidget extends BaseWidget
                     $q->whereHas('sppd.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id));
                 });
 
-                $pendingTransport->where(function (Builder $q) use ($employee) {
-                    $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
-                        ->orWhereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
-                });
+                if (! $isManager) {
+                    $pendingTransport->where(function (Builder $q) use ($employee) {
+                        $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                            ->orWhereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
+                    });
 
-                $pendingTravel->where(function (Builder $q) use ($employee) {
-                    $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
-                        ->orWhereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
-                });
+                    $pendingTravel->where(function (Builder $q) use ($employee) {
+                        $q->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                            ->orWhereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
+                    });
+                }
             } else {
                 $filterByEmp = function (Builder $query, string $docClass) use ($employee) {
                     $query->whereHasMorph('document', [$docClass], function (Builder $q) use ($employee) {
@@ -191,13 +194,13 @@ class ExecutiveOverviewWidget extends BaseWidget
             default => OfficialTravelApprovalResource::getUrl('index'),
         };
 
-        $sppdUrl = $isHrOrAdmin
-            ? SppdResource::getUrl('index')
-            : SppdApprovalResource::getUrl('index');
+        $sppdUrl = $isDivisionHeadOnly
+            ? null
+            : ($isHrOrAdmin ? SppdResource::getUrl('index') : SppdApprovalResource::getUrl('index'));
 
-        $costUrl = $isHrOrAdmin
-            ? SppdCostResource::getUrl('index')
-            : ($isSupervisorOnly || $isDivisionHeadOnly ? $sppdUrl : SppdCostApprovalResource::getUrl('index'));
+        $costUrl = $isDivisionHeadOnly || $isSupervisorOnly
+            ? null
+            : ($isHrOrAdmin ? SppdCostResource::getUrl('index') : SppdCostApprovalResource::getUrl('index'));
 
         $transportUrl = $isSupervisorOnly
             ? null
@@ -208,9 +211,9 @@ class ExecutiveOverviewWidget extends BaseWidget
             : ($isHrOrAdmin ? OfficialTravelRecapResource::getUrl('index') : OfficialTravelApprovalResource::getUrl('index'));
 
         $approvalDesc = match (true) {
-            $isSupervisorOnly => $totalPending > 0 ? "{$cntPendingSppd} SPPD menunggu verifikasi Anda" : 'Seluruh SPPD telah diverifikasi',
-            $isDivisionHeadOnly => $totalPending > 0 ? "{$cntPendingTransport} Rekap Tiket • {$cntPendingTravel} Rekap Dinas" : 'Seluruh rekap telah disetujui',
-            default => $totalPending > 0 ? "{$cntPendingMemo} Memo • {$cntPendingSppd} SPPD • {$cntPendingSppdCost} Biaya SPPD • {$cntPendingRecap} Rekap" : 'Seluruh permohonan telah ditinjau',
+            $isSupervisorOnly => $totalPending > 0 ? "{$cntPendingSppd} SPPD perlu verifikasi" : 'Semua terverifikasi',
+            $isDivisionHeadOnly => $totalPending > 0 ? "{$cntPendingTransport} Tiket • {$cntPendingTravel} Dinas" : 'Semua disetujui',
+            default => $totalPending > 0 ? "{$cntPendingMemo} Memo • {$cntPendingSppd} SPPD • {$cntPendingSppdCost} Biaya • {$cntPendingRecap} Rekap" : 'Semua sudah ditinjau',
         };
 
         return [
@@ -222,30 +225,30 @@ class ExecutiveOverviewWidget extends BaseWidget
                 ->url($approvalUrl),
 
             Stat::make('Perjalanan Dinas (SPPD)', $approvedSppdCount)
-                ->description("Dari total {$totalSppdCount} penugasan dinas" . ($pendingSppdDocCount > 0 ? " ({$pendingSppdDocCount} proses)" : ''))
+                ->description("Total {$totalSppdCount} SPPD" . ($pendingSppdDocCount > 0 ? " ({$pendingSppdDocCount} proses)" : ''))
                 ->descriptionIcon('heroicon-m-paper-airplane')
                 ->color('info')
                 ->chart([2, 4, 3, 6, 8, $approvedSppdCount])
                 ->url($sppdUrl),
 
             Stat::make('Realisasi Biaya SPPD', 'Rp ' . number_format($totalSppdCost, 0, ',', '.'))
-                ->description($uncalculatedSppdCount > 0
-                    ? "{$uncalculatedSppdCount} SPPD belum dihitung • Klik kelola"
-                    : 'Total kalkulasi biaya dinas disetujui')
+                ->description($uncalculatedSppdCount > 0 && $costUrl
+                    ? "{$uncalculatedSppdCount} SPPD belum dihitung"
+                    : 'Total biaya disetujui')
                 ->descriptionIcon($uncalculatedSppdCount > 0 ? 'heroicon-m-exclamation-circle' : 'heroicon-m-calculator')
                 ->color($uncalculatedSppdCount > 0 && $isHrOrAdmin ? 'warning' : 'primary')
                 ->chart([1, 3, 2, 5, 4, $approvedSppdCount])
                 ->url($costUrl),
 
             Stat::make('Rekap Tiket & Akomodasi', 'Rp ' . number_format($totalTransportAmount, 0, ',', '.'))
-                ->description("{$totalTransportCount} Dokumen • {$cntPendingTransport} Menunggu Persetujuan")
+                ->description("{$totalTransportCount} Dok • {$cntPendingTransport} Pending")
                 ->descriptionIcon('heroicon-m-ticket')
                 ->color($cntPendingTransport > 0 ? 'warning' : 'info')
                 ->chart([1, 2, 3, 2, 4, $totalTransportCount])
                 ->url($transportUrl),
 
             Stat::make('Rekap Perjalanan Dinas', 'Rp ' . number_format($totalTravelAmount, 0, ',', '.'))
-                ->description("{$totalTravelCount} Dokumen • {$cntPendingTravel} Menunggu Persetujuan")
+                ->description("{$totalTravelCount} Dok • {$cntPendingTravel} Pending")
                 ->descriptionIcon('heroicon-m-document-chart-bar')
                 ->color($cntPendingTravel > 0 ? 'warning' : 'success')
                 ->chart([1, 2, 4, 3, 5, $totalTravelCount])

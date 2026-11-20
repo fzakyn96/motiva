@@ -37,7 +37,7 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
         $isBusinessDivisionHead = (bool) $employee?->isBusinessDivisionHead();
-        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR']);
+        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin']) || ($user->hasRole('HR') && ! $employee?->work_area_id);
         $isDivisionHeadOnly = (($user?->hasRole('Division Head') ?? false) || $isBusinessDivisionHead) && ! $user?->hasAnyRole(['Superadmin', 'Admin', 'HR']);
 
         $query = ApprovalRequest::query()
@@ -66,7 +66,7 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                     });
                 });
             } else {
-                $query->where(function (Builder $q) use ($employee) {
+                $query->where(function (Builder $q) use ($user, $employee) {
                     // 1. Memo
                     $q->where(function (Builder $sub) use ($employee) {
                         $sub->where('document_type', Memo::class)
@@ -111,24 +111,24 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
                             });
                     })
                     // 4. Rekap Tiket & Akomodasi
-                    ->orWhere(function (Builder $sub) use ($employee) {
-                        $sub->where('document_type', TransportAccommodationRecap::class)
-                            ->when($employee->work_area_id, function (Builder $q2) use ($employee) {
-                                $q2->where(function (Builder $wq) use ($employee) {
-                                    $wq->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
-                                        ->orWhereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
-                                });
-                            }, fn (Builder $q2) => $q2->when($employee->department_id, fn (Builder $q3) => $q3->whereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $rq) => $rq->where('department_id', $employee->department_id))));
+                    ->orWhere(function (Builder $sub) use ($user, $employee) {
+                        $sub->where('document_type', TransportAccommodationRecap::class);
+                        if (! $user?->hasRole('Manager') && $employee->work_area_id) {
+                            $sub->where(function (Builder $wq) use ($employee) {
+                                $wq->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                                    ->orWhereHasMorph('document', [TransportAccommodationRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
+                            });
+                        }
                     })
                     // 5. Rekap Perjalanan Dinas
-                    ->orWhere(function (Builder $sub) use ($employee) {
-                        $sub->where('document_type', OfficialTravelRecap::class)
-                            ->when($employee->work_area_id, function (Builder $q2) use ($employee) {
-                                $q2->where(function (Builder $wq) use ($employee) {
-                                    $wq->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
-                                        ->orWhereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
-                                });
-                            }, fn (Builder $q2) => $q2->when($employee->department_id, fn (Builder $q3) => $q3->whereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $rq) => $rq->where('department_id', $employee->department_id))));
+                    ->orWhere(function (Builder $sub) use ($user, $employee) {
+                        $sub->where('document_type', OfficialTravelRecap::class);
+                        if (! $user?->hasRole('Manager') && $employee->work_area_id) {
+                            $sub->where(function (Builder $wq) use ($employee) {
+                                $wq->whereHas('requester', fn (Builder $rq) => $rq->where('work_area_id', $employee->work_area_id))
+                                    ->orWhereHasMorph('document', [OfficialTravelRecap::class], fn (Builder $dq) => $dq->whereHas('businessTrip.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id)));
+                            });
+                        }
                     });
                 });
             }
@@ -136,118 +136,127 @@ class ExecutivePendingApprovalsWidget extends BaseWidget
 
         return $table
             ->query($query)
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
-                Tables\Columns\TextColumn::make('document_type')
-                    ->label('Dokumen')
-                    ->badge()
-                    ->formatStateUsing(function (string $state): string {
-                        return match ($state) {
-                            Memo::class => 'MEMO',
-                            Sppd::class => 'SPPD',
-                            SppdCost::class => 'BIAYA SPPD',
-                            TransportAccommodationRecap::class => 'REKAP TIKET',
-                            OfficialTravelRecap::class => 'REKAP DINAS',
-                            default => class_basename($state),
-                        };
-                    })
-                    ->color(function (string $state): string {
-                        return match ($state) {
-                            Memo::class => 'primary',
-                            Sppd::class => 'warning',
-                            SppdCost::class => 'danger',
-                            TransportAccommodationRecap::class => 'success',
-                            OfficialTravelRecap::class => 'info',
-                            default => 'gray',
-                        };
-                    }),
+                Tables\Columns\Layout\Split::make([
+                    Tables\Columns\TextColumn::make('document_type')
+                        ->label('Dokumen')
+                        ->badge()
+                        ->grow(false)
+                        ->formatStateUsing(function (string $state): string {
+                            return match ($state) {
+                                Memo::class => 'MEMO',
+                                Sppd::class => 'SPPD',
+                                SppdCost::class => 'BIAYA SPPD',
+                                TransportAccommodationRecap::class => 'REKAP TIKET',
+                                OfficialTravelRecap::class => 'REKAP DINAS',
+                                default => class_basename($state),
+                            };
+                        })
+                        ->color(function (string $state): string {
+                            return match ($state) {
+                                Memo::class => 'primary',
+                                Sppd::class => 'warning',
+                                SppdCost::class => 'danger',
+                                TransportAccommodationRecap::class => 'success',
+                                OfficialTravelRecap::class => 'info',
+                                default => 'gray',
+                            };
+                        }),
 
-                Tables\Columns\TextColumn::make('document_info')
-                    ->label('Nomor & Keperluan')
-                    ->state(function (ApprovalRequest $record) {
-                        $doc = $record->document;
-                        if (! $doc) return '-';
+                    Tables\Columns\TextColumn::make('document_info')
+                        ->label('Nomor & Keperluan')
+                        ->state(function (ApprovalRequest $record) {
+                            $doc = $record->document;
+                            if (! $doc) return '-';
 
-                        if ($doc instanceof Memo) {
-                            return ($doc->nomor_memo ?: 'Memo Draf') . ' • ' . ($doc->title ?: $doc->agenda);
-                        }
+                            if ($doc instanceof Memo) {
+                                return ($doc->nomor_memo ?: 'Memo Draf') . ' • ' . ($doc->title ?: $doc->agenda);
+                            }
 
-                        if ($doc instanceof Sppd) {
-                            $dest = $doc->businessTrip?->destination ?? ($doc->destination_location ?? '-');
-                            return ($doc->sppd_number ?: 'SPPD') . ' • Ke ' . $dest;
-                        }
+                            if ($doc instanceof Sppd) {
+                                $dest = $doc->businessTrip?->destination ?? ($doc->destination_location ?? '-');
+                                return ($doc->sppd_number ?: 'SPPD') . ' • Ke ' . $dest;
+                            }
 
-                        if ($doc instanceof SppdCost) {
-                            $sppd = $doc->sppd;
-                            $empName = $sppd?->employee?->name ?? '-';
-                            $total = 'Rp ' . number_format((float) $doc->total_cost, 0, ',', '.');
-                            return ($sppd?->sppd_number ?: 'Biaya SPPD') . " • {$empName} ({$total})";
-                        }
+                            if ($doc instanceof SppdCost) {
+                                $sppd = $doc->sppd;
+                                $empName = $sppd?->employee?->name ?? '-';
+                                $total = 'Rp ' . number_format((float) $doc->total_cost, 0, ',', '.');
+                                return ($sppd?->sppd_number ?: 'Biaya SPPD') . " • {$empName} ({$total})";
+                            }
 
-                        if ($doc instanceof TransportAccommodationRecap) {
-                            return ($doc->period_label ?: 'Rekap Tiket') . ' • ' . ($doc->work_name ?: 'Rekap Tiket & Akomodasi');
-                        }
+                            if ($doc instanceof TransportAccommodationRecap) {
+                                return ($doc->period_label ?: 'Rekap Tiket') . ' • ' . ($doc->work_name ?: 'Rekap Tiket & Akomodasi');
+                            }
 
-                        if ($doc instanceof OfficialTravelRecap) {
-                            return ($doc->period_label ?: 'Rekap Dinas') . ' • ' . ($doc->work_name ?: 'Rekap Perjalanan Dinas');
-                        }
+                            if ($doc instanceof OfficialTravelRecap) {
+                                return ($doc->period_label ?: 'Rekap Dinas') . ' • ' . ($doc->work_name ?: 'Rekap Perjalanan Dinas');
+                            }
 
-                        return '-';
-                    })
-                    ->weight('bold')
-                    ->wrap(),
+                            return '-';
+                        })
+                        ->weight('bold')
+                        ->wrap(),
 
-                Tables\Columns\TextColumn::make('requester.name')
-                    ->label('Pengaju & Area Kerja')
-                    ->formatStateUsing(function (ApprovalRequest $record) {
-                        $req = $record->requester;
-                        if (! $req) return '-';
-                        $area = $req->workArea?->name ? ('Area ' . $req->workArea->name) : ($req->department?->code ?? $req->department?->name);
-                        $pos = $req->position?->name;
-                        $extra = array_filter([$pos, $area]);
-                        return ! empty($extra) ? "{$req->name} (" . implode(' • ', $extra) . ")" : $req->name;
-                    }),
+                    Tables\Columns\TextColumn::make('current_step')
+                        ->label('Tahap Verifikasi')
+                        ->badge()
+                        ->grow(false)
+                        ->state(function (ApprovalRequest $record): string {
+                            $resolverClass = $record->currentStep()?->policyStep?->resolver_class;
 
-                Tables\Columns\TextColumn::make('current_step')
-                    ->label('Tahap Verifikasi')
-                    ->badge()
-                    ->state(function (ApprovalRequest $record): string {
-                        $resolverClass = $record->currentStep()?->policyStep?->resolver_class;
+                            if ($resolverClass === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class) {
+                                return 'Tahap 1 • Supervisor';
+                            }
+                            if ($resolverClass === \App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver::class) {
+                                return 'Tahap 2 • Division Head Perkasa';
+                            }
+                            if ($resolverClass === \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class) {
+                                return 'Tahap 3 • Division Head PGN';
+                            }
+                            if (in_array($record->document_type, [TransportAccommodationRecap::class, OfficialTravelRecap::class], true)) {
+                                return 'Tahap 1 • Pemeriksaan Manajer';
+                            }
+                            if ($record->document_type === Sppd::class) {
+                                return 'Tahap 2 • Manajer';
+                            }
 
-                        if ($resolverClass === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class) {
-                            return 'Tahap 1 • Supervisor';
-                        }
-                        if ($resolverClass === \App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver::class) {
-                            return 'Tahap 2 • Division Head Perkasa';
-                        }
-                        if ($resolverClass === \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class) {
-                            return 'Tahap 3 • Division Head PGN';
-                        }
-                        if (in_array($record->document_type, [TransportAccommodationRecap::class, OfficialTravelRecap::class], true)) {
-                            return 'Tahap 1 • Pemeriksaan Manajer';
-                        }
-                        if ($record->document_type === Sppd::class) {
-                            return 'Tahap 2 • Manajer';
-                        }
+                            return 'Otorisasi Manajer';
+                        })
+                        ->color(function (ApprovalRequest $record): string {
+                            $resolverClass = $record->currentStep()?->policyStep?->resolver_class;
+                            if ($resolverClass === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class) {
+                                return 'info';
+                            }
+                            if ($resolverClass === \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class) {
+                                return 'success';
+                            }
 
-                        return 'Otorisasi Manajer';
-                    })
-                    ->color(function (ApprovalRequest $record): string {
-                        $resolverClass = $record->currentStep()?->policyStep?->resolver_class;
-                        if ($resolverClass === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class) {
-                            return 'info';
-                        }
-                        if ($resolverClass === \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class) {
-                            return 'success';
-                        }
+                            return 'warning';
+                        })
+                        ->icon('heroicon-m-shield-check'),
+                ])->from('md'),
 
-                        return 'warning';
-                    })
-                    ->icon('heroicon-m-shield-check'),
+                Tables\Columns\Layout\Panel::make([
+                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2])
+                        ->schema([
+                            Tables\Columns\TextColumn::make('requester.name')
+                                ->description('Pengaju & Area Kerja', position: 'above')
+                                ->formatStateUsing(function (ApprovalRequest $record) {
+                                    $req = $record->requester;
+                                    if (! $req) return '-';
+                                    $area = $req->workArea?->name ? ('Area ' . $req->workArea->name) : ($req->department?->code ?? $req->department?->name);
+                                    $pos = $req->position?->name;
+                                    $extra = array_filter([$pos, $area]);
+                                    return ! empty($extra) ? "{$req->name} (" . implode(' • ', $extra) . ")" : $req->name;
+                                }),
 
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Diajukan')
-                    ->dateTime('d/m/Y H:i')
-                    ->description(fn (ApprovalRequest $record) => $record->created_at->diffForHumans()),
+                            Tables\Columns\TextColumn::make('created_at')
+                                ->description('Diajukan Pada', position: 'above')
+                                ->dateTime('d/m/Y H:i'),
+                        ]),
+                ])->collapsible(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('document_type')

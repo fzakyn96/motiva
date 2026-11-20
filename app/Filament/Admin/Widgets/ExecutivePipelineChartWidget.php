@@ -34,7 +34,7 @@ class ExecutivePipelineChartWidget extends ChartWidget
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
-        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']) || (bool) $employee?->isBusinessDivisionHead();
+        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'Division Head']) || (bool) $employee?->isBusinessDivisionHead() || ($user->hasRole('HR') && ! $employee?->work_area_id);
 
         // 1. Memo Query
         $memoQuery = Memo::query();

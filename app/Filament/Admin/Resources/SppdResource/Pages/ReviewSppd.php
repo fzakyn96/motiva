@@ -22,12 +22,18 @@ class ReviewSppd extends ViewRecord
     public static function authorizeResourceAccess(): void
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-        abort_unless($user && ($user->hasRole(['Manager', 'Supervisor', 'Admin', 'Superadmin', 'HR']) || static::getResource()::canAccess()), 403);
+        abort_unless($user && ($user->hasRole(['Division Head', 'Manager', 'Supervisor', 'Admin', 'Superadmin', 'HR']) || static::getResource()::canAccess()), 403);
     }
 
     public function getBreadcrumbs(): array
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if ($user && ($user->hasRole('Division Head') || $user->employee?->isBusinessDivisionHead()) && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+            return [
+                \App\Filament\Admin\Pages\Dashboard::getUrl() => 'Dashboard',
+                'Detail SPPD',
+            ];
+        }
         if (request()->query('from') === 'approvals' || $user?->hasAnyRole(['Manager', 'Supervisor']) || str_contains(request()->headers->get('referer', ''), 'sppd-approvals')) {
             return [
                 SppdApprovalResource::getUrl('index') => 'Persetujuan SPPD',
@@ -173,8 +179,8 @@ class ReviewSppd extends ViewRecord
         }
 
         $currentStep = $request->currentStep();
-        $isStep1 = $currentStep && (int) $currentStep->policyStep?->step_order === 1;
-        $roleType = $isStep1 ? 'supervisor' : 'manager';
+        $isSupervisorStep = $currentStep && $currentStep->policyStep?->resolver_class === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class;
+        $roleType = $isSupervisorStep ? 'supervisor' : 'manager';
 
         $resolver = new ApprovalResolver();
         try {
@@ -183,7 +189,7 @@ class ReviewSppd extends ViewRecord
             $sppd->refresh();
             $sigService->signDocument($sppd, $employee, $roleType, $notes ?: 'Disetujui melalui Halaman Review', $user);
 
-            if ($isStep1) {
+            if ($isSupervisorStep) {
                 Notification::make()
                     ->title('SPPD Disetujui Supervisor')
                     ->body('Tahap 1 selesai dan tanda tangan Anda telah tercatat. SPPD kini diteruskan ke Manajer untuk persetujuan tingkat akhir.')
@@ -379,9 +385,12 @@ class ReviewSppd extends ViewRecord
             Action::make('back')
                 ->label('Kembali')
                 ->icon('heroicon-o-arrow-left')
-                ->color('gray')
+                ->color('info')
                 ->url(function () {
                     $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                    if ($user && ($user->hasRole('Division Head') || $user->employee?->isBusinessDivisionHead()) && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+                        return \App\Filament\Admin\Pages\Dashboard::getUrl();
+                    }
                     if (request()->query('from') === 'approvals' || $user?->hasAnyRole(['Manager', 'Supervisor']) || str_contains(request()->headers->get('referer', ''), 'sppd-approvals')) {
                         return SppdApprovalResource::getUrl('index');
                     }

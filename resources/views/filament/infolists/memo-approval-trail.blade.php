@@ -83,7 +83,7 @@
                         @if ($docSig)
                             <div class="mt-2">
                                 <a href="{{ $docSig->verification_url }}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;background:#059669;color:#ffffff;font-size:11px;font-weight:600;text-decoration:none;">
-                                    ✓ Verifikasi Tanda Tangan Elektronik &nearr;
+                                    ✓ Verifikasi Tanda Tangan Elektronik
                                 </a>
                             </div>
                         @endif

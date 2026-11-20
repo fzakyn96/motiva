@@ -30,6 +30,19 @@ class ManagerAuthorityResolver implements AuthorityResolver
             return false;
         }
 
+        // For multi-manager recaps, a manager who already approved an earlier manager step cannot approve a second manager step
+        if (in_array($request->document_type, [\App\Models\TransportAccommodationRecap::class, \App\Models\OfficialTravelRecap::class], true)) {
+            $alreadyApprovedByThisManager = $request->steps()
+                ->where('status', 'approved')
+                ->where('approver_employee_id', $employee->id)
+                ->whereHas('policyStep', fn ($q) => $q->where('resolver_class', self::class))
+                ->exists();
+
+            if ($alreadyApprovedByThisManager) {
+                return false;
+            }
+        }
+
         // Manager / Koordinator hanya berwenang mengambil keputusan pada area kerja yang sama
         if (! $employee->isSameWorkAreaAsRequest($request)) {
             return false;

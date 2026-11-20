@@ -59,7 +59,17 @@ class SppdCostResource extends Resource
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         if (! $user) return false;
-        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+        if (! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+            return false;
+        }
+        if ($user->hasRole('HR') && ! $user->hasAnyRole(['Superadmin', 'Admin'])) {
+            $areaId = $user->employee?->work_area_id;
+            if ($areaId && $record instanceof Sppd && $record->employee?->work_area_id) {
+                return (int) $areaId === (int) $record->employee->work_area_id;
+            }
+        }
+
+        return true;
     }
 
     public static function canDelete(Model $record): bool
@@ -69,9 +79,17 @@ class SppdCostResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->where('status', 'approved')
             ->with(['employee.position', 'employee.department', 'cost', 'businessTrip.memo', 'businessTrip.sppds']);
+
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if ($user && ! $user->hasAnyRole(['Superadmin', 'Admin']) && $user->employee?->work_area_id) {
+            $areaId = (int) $user->employee->work_area_id;
+            $query->whereHas('employee', fn (Builder $eq) => $eq->where('work_area_id', $areaId));
+        }
+
+        return $query;
     }
 
     public static function calculateAllTotals(Forms\Set $set, Forms\Get $get): void
@@ -561,6 +579,7 @@ class SppdCostResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
                 Tables\Columns\Layout\Split::make([
                     Tables\Columns\TextColumn::make('employee.name')
@@ -675,9 +694,22 @@ class SppdCostResource extends Resource
                 Tables\Filters\SelectFilter::make('business_trip_id')
                     ->label('Nomor Memo')
                     ->options(function (): array {
-                        return \App\Models\BusinessTrip::whereHas('sppds', fn (Builder $q) => $q->where('status', 'approved'))
+                        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                        $areaId = ($user && ! $user->hasAnyRole(['Superadmin', 'Admin'])) ? $user->employee?->work_area_id : null;
+
+                        return \App\Models\BusinessTrip::whereHas('sppds', function (Builder $q) use ($areaId) {
+                            $q->where('status', 'approved');
+                            if ($areaId) {
+                                $q->whereHas('employee', fn (Builder $eq) => $eq->where('work_area_id', $areaId));
+                            }
+                        })
                             ->with(['memo'])
-                            ->withCount(['sppds as approved_sppds_count' => fn (Builder $q) => $q->where('status', 'approved')])
+                            ->withCount(['sppds as approved_sppds_count' => function (Builder $q) use ($areaId) {
+                                $q->where('status', 'approved');
+                                if ($areaId) {
+                                    $q->whereHas('employee', fn (Builder $eq) => $eq->where('work_area_id', $areaId));
+                                }
+                            }])
                             ->orderByDesc('id')
                             ->get()
                             ->mapWithKeys(function (\App\Models\BusinessTrip $trip): array {

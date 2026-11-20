@@ -70,11 +70,22 @@ class SppdResource extends Resource
             return false;
         }
 
-        if ($user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Manager', 'Supervisor'])) {
+        if ($user->hasAnyRole(['Superadmin', 'Admin'])) {
             return true;
         }
 
         $employee = $user->employee;
+        if ($user->hasAnyRole(['Division Head', 'HR', 'Manager', 'Supervisor']) || $employee?->isBusinessDivisionHead()) {
+            if ($user->hasRole('Division Head') || $employee?->isBusinessDivisionHead()) {
+                return true;
+            }
+            if ($employee?->work_area_id && $record->employee?->work_area_id) {
+                return (int) $employee->work_area_id === (int) $record->employee->work_area_id;
+            }
+
+            return true;
+        }
+
         if (! $employee) {
             return false;
         }
@@ -89,12 +100,20 @@ class SppdResource extends Resource
             return false;
         }
 
-        // HR dan Superadmin boleh mengedit SPPD
-        if ($user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+        // HR dan Superadmin boleh mengedit SPPD pada areanya
+        if ($user->hasAnyRole(['Superadmin', 'Admin'])) {
             return true;
         }
 
         $employee = $user->employee;
+        if ($user->hasRole('HR')) {
+            if ($employee?->work_area_id && $record->employee?->work_area_id) {
+                return (int) $employee->work_area_id === (int) $record->employee->work_area_id;
+            }
+
+            return true;
+        }
+
         if (! $employee) {
             return false;
         }
@@ -166,7 +185,7 @@ class SppdResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
-        $user = auth()->user();
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
 
         if (! $user) {
             return $query;
@@ -182,6 +201,10 @@ class SppdResource extends Resource
         }
 
         if ($user->hasAnyRole(['Manager', 'Supervisor', 'HR'])) {
+            if ($employee->work_area_id) {
+                return $query->whereHas('employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id));
+            }
+
             return $query->where(function (Builder $sub) use ($employee) {
                 $sub->whereHas('employee', function ($q) use ($employee) {
                     $q->where('department_id', $employee->department_id)
@@ -208,7 +231,22 @@ class SppdResource extends Resource
                         Forms\Components\Fieldset::make('Data Pekerja & Nomor Dokumen')
                             ->schema([
                                 Forms\Components\Select::make('business_trip_id')
-                                    ->relationship('businessTrip', 'activity_name')
+                                    ->relationship(
+                                        'businessTrip',
+                                        'activity_name',
+                                        modifyQueryUsing: function (Builder $query): Builder {
+                                            $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                                            $areaId = (! $user?->hasAnyRole(['Superadmin', 'Admin'])) ? $user?->employee?->work_area_id : null;
+                                            if ($areaId) {
+                                                $query->where(function (Builder $q) use ($areaId) {
+                                                    $q->whereHas('memo.creator', fn (Builder $cq) => $cq->where('work_area_id', $areaId))
+                                                        ->orWhereHas('sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $areaId));
+                                                });
+                                            }
+
+                                            return $query;
+                                        }
+                                    )
                                     ->label('Kegiatan Perjalanan Dinas')
                                     ->prefixIcon('heroicon-m-briefcase')
                                     ->required()
@@ -216,7 +254,19 @@ class SppdResource extends Resource
                                     ->preload()
                                     ->visible(fn (string $context) => $context === 'create'),
                                 Forms\Components\Select::make('employee_id')
-                                    ->relationship('employee', 'name')
+                                    ->relationship(
+                                        'employee',
+                                        'name',
+                                        modifyQueryUsing: function (Builder $query): Builder {
+                                            $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                                            $areaId = (! $user?->hasAnyRole(['Superadmin', 'Admin'])) ? $user?->employee?->work_area_id : null;
+                                            if ($areaId) {
+                                                $query->where('work_area_id', $areaId);
+                                            }
+
+                                            return $query;
+                                        }
+                                    )
                                     ->label('Pegawai yang Ditugaskan')
                                     ->prefixIcon('heroicon-m-user')
                                     ->required()
@@ -666,6 +716,7 @@ class SppdResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
                 Tables\Columns\Layout\Split::make([
                     Tables\Columns\TextColumn::make('agenda')

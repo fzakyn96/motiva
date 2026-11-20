@@ -51,9 +51,28 @@ class TransportAccommodationRecapResource extends Resource
         return (bool) $user?->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Manager', 'Division Head', 'Supervisor']);
     }
 
+    public static function getHrWorkAreaId(): ?int
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user || ! $user->hasRole('HR') || $user->hasAnyRole(['Superadmin', 'Admin', 'Manager', 'Division Head'])) {
+            return null;
+        }
+
+        return $user->employee?->work_area_id ? (int) $user->employee->work_area_id : null;
+    }
+
     public static function canView(Model $record): bool
     {
-        return static::canViewAny();
+        if (! static::canViewAny()) {
+            return false;
+        }
+
+        $hrAreaId = static::getHrWorkAreaId();
+        if ($hrAreaId) {
+            return static::getEloquentQuery()->whereKey($record->getKey())->exists();
+        }
+
+        return true;
     }
 
     public static function canCreate(): bool
@@ -74,12 +93,43 @@ class TransportAccommodationRecapResource extends Resource
             return true;
         }
 
-        return RecapTableSupport::latestApproval($record)?->status !== 'approved';
+        return static::canView($record) && RecapTableSupport::latestApproval($record)?->status !== 'approved';
     }
 
     public static function canDelete(Model $record): bool
     {
         return static::canEdit($record);
+    }
+
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = parent::getEloquentQuery();
+        $hrAreaId = static::getHrWorkAreaId();
+        if ($hrAreaId) {
+            $userId = (\Filament\Facades\Filament::auth()->user() ?? auth()->user())?->id;
+            $areaSppdIds = Sppd::whereHas('employee', fn (\Illuminate\Database\Eloquent\Builder $eq) => $eq->where('work_area_id', $hrAreaId))->pluck('id')->all();
+
+            $query->where(function (\Illuminate\Database\Eloquent\Builder $q) use ($hrAreaId, $userId, $areaSppdIds) {
+                if ($userId) {
+                    $q->where('creator_id', $userId);
+                }
+                $q->orWhereHas('businessTrip.sppds.employee', fn (\Illuminate\Database\Eloquent\Builder $eq) => $eq->where('work_area_id', $hrAreaId))
+                    ->orWhereHas('items.sppd.employee', fn (\Illuminate\Database\Eloquent\Builder $eq) => $eq->where('work_area_id', $hrAreaId));
+
+                if (! empty($areaSppdIds)) {
+                    $q->orWhereHas('items', function (\Illuminate\Database\Eloquent\Builder $iq) use ($areaSppdIds) {
+                        $iq->where(function (\Illuminate\Database\Eloquent\Builder $jq) use ($areaSppdIds) {
+                            foreach ($areaSppdIds as $sid) {
+                                $jq->orWhereJsonContains('sppd_ids', (int) $sid)
+                                    ->orWhereJsonContains('sppd_ids', (string) $sid);
+                            }
+                        });
+                    });
+                }
+            });
+        }
+
+        return $query;
     }
 
     public static function form(Form $form): Form
@@ -96,14 +146,23 @@ class TransportAccommodationRecapResource extends Resource
                         Forms\Components\Select::make('business_trip_ids')
                             ->label('Pilih Kegiatan / Dokumen SPPD dalam Periode Ini (Bisa pilih > 1)')
                             ->multiple()
-                            ->options(fn () => BusinessTrip::with(['memo.department', 'sppds.cost'])
-                                ->whereHas('sppds.cost')
-                                ->orderByDesc('id')
-                                ->get()
-                                ->mapWithKeys(fn (BusinessTrip $t) => [
-                                    $t->id => ($t->memo?->nomor_memo ? "{$t->memo->nomor_memo} — " : '') . $t->activity_name . ' (' . $t->sppds->count() . ' Pegawai)',
-                                ])
-                                ->toArray())
+                            ->options(function () {
+                                $hrAreaId = static::getHrWorkAreaId();
+
+                                return BusinessTrip::with(['memo.department', 'sppds.cost'])
+                                    ->whereHas('sppds', function ($q) use ($hrAreaId) {
+                                        $q->whereHas('cost');
+                                        if ($hrAreaId) {
+                                            $q->whereHas('employee', fn ($eq) => $eq->where('work_area_id', $hrAreaId));
+                                        }
+                                    })
+                                    ->orderByDesc('id')
+                                    ->get()
+                                    ->mapWithKeys(fn (BusinessTrip $t) => [
+                                        $t->id => ($t->memo?->nomor_memo ? "{$t->memo->nomor_memo} — " : '') . $t->activity_name . ' (' . $t->sppds->count() . ' Pegawai)',
+                                    ])
+                                    ->toArray();
+                            })
                             ->searchable()
                             ->live()
                             ->afterStateUpdated(fn ($state, Forms\Set $set, Forms\Get $get) => static::populateFromBusinessTrip($state, $get('grouping_mode') ?? 'per_employee', $set, $setting))
@@ -155,7 +214,25 @@ class TransportAccommodationRecapResource extends Resource
                     ->description('Anda dapat memilih satu atau beberapa pegawai sekaligus pada tiap baris bila tagihan digabung dalam 1 invoice.')
                     ->schema([
                         Forms\Components\Repeater::make('items')
-                            ->relationship('items')
+                            ->relationship(
+                                'items',
+                                modifyQueryUsing: function (\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder {
+                                    $hrAreaId = static::getHrWorkAreaId();
+                                    if ($hrAreaId) {
+                                        $areaSppdIds = Sppd::whereHas('employee', fn ($eq) => $eq->where('work_area_id', $hrAreaId))->pluck('id')->all();
+                                        $query->where(function (\Illuminate\Database\Eloquent\Builder $q) use ($hrAreaId, $areaSppdIds) {
+                                            $q->where(fn ($nq) => $nq->whereNull('sppd_id')->whereNull('sppd_ids'))
+                                                ->orWhereHas('sppd.employee', fn ($eq) => $eq->where('work_area_id', $hrAreaId));
+                                            foreach ($areaSppdIds as $sid) {
+                                                $q->orWhereJsonContains('sppd_ids', (int) $sid)
+                                                    ->orWhereJsonContains('sppd_ids', (string) $sid);
+                                            }
+                                        });
+                                    }
+
+                                    return $query;
+                                }
+                            )
                             ->label('Daftar Item Transportasi / Hotel')
                             ->addActionLabel('Tambah Item')
                             ->reorderableWithButtons()
@@ -164,9 +241,17 @@ class TransportAccommodationRecapResource extends Resource
                                 Forms\Components\Select::make('sppd_ids')
                                     ->label('Pegawai / SPPD Terkait (Bisa pilih > 1 untuk invoice gabungan)')
                                     ->multiple()
-                                    ->options(fn () => Sppd::with('employee')->orderByDesc('id')->get()->mapWithKeys(fn (Sppd $s) => [
-                                        $s->id => ($s->sppd_number ?: 'Draf') . ' - ' . ($s->employee?->name ?? '-'),
-                                    ])->toArray())
+                                    ->options(function () {
+                                        $hrAreaId = static::getHrWorkAreaId();
+
+                                        return Sppd::with('employee')
+                                            ->when($hrAreaId, fn ($q) => $q->whereHas('employee', fn ($eq) => $eq->where('work_area_id', $hrAreaId)))
+                                            ->orderByDesc('id')
+                                            ->get()
+                                            ->mapWithKeys(fn (Sppd $s) => [
+                                                $s->id => ($s->sppd_number ?: 'Draf') . ' - ' . ($s->employee?->name ?? '-'),
+                                            ])->toArray();
+                                    })
                                     ->searchable()
                                     ->live()
                                     ->afterStateUpdated(fn ($state, Forms\Set $set, Forms\Get $get) => static::populateItemFromSppds($state, $get('item_category') ?? 'transport', $set, $get, $setting))
@@ -266,7 +351,11 @@ class TransportAccommodationRecapResource extends Resource
         }
 
         $firstTrip = $trips->first();
+        $hrAreaId = static::getHrWorkAreaId();
         $allSppds = $trips->flatMap->sppds;
+        if ($hrAreaId) {
+            $allSppds = $allSppds->filter(fn ($s) => (int) ($s->employee?->work_area_id ?? 0) === $hrAreaId)->values();
+        }
         $deptId = $allSppds->first()?->employee?->department_id ?? $firstTrip->memo?->department_id;
         $rawDate = $allSppds->pluck('departure_date')->filter()->sort()->first() ?? $firstTrip->start_date ?? now();
         $periodDate = Carbon::parse($rawDate)->locale('id');
@@ -334,6 +423,9 @@ class TransportAccommodationRecapResource extends Resource
         } else {
             foreach ($trips as $trip) {
                 foreach ($trip->sppds as $sppd) {
+                    if ($hrAreaId && (int) ($sppd->employee?->work_area_id ?? 0) !== $hrAreaId) {
+                        continue;
+                    }
                     $cost = $sppd->cost;
                     if (! $cost) {
                         continue;
@@ -420,6 +512,7 @@ class TransportAccommodationRecapResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
                 Tables\Columns\Layout\Split::make([
                     Tables\Columns\TextColumn::make('period_label')
@@ -473,6 +566,7 @@ class TransportAccommodationRecapResource extends Resource
             ->schema([
                 Infolists\Components\Section::make('Ringkasan Rekap Tiket & Akomodasi')
                     ->icon('heroicon-o-document-text')
+                    ->iconColor('primary')
                     ->columns(['default' => 1, 'md' => 3])
                     ->schema([
                         Infolists\Components\TextEntry::make('work_name')->label('Pekerjaan'),
@@ -520,8 +614,33 @@ class TransportAccommodationRecapResource extends Resource
 
                 Infolists\Components\Section::make('Rincian Item & Invoice / Evidence')
                     ->icon('heroicon-o-list-bullet')
+                    ->iconColor('info')
                     ->schema([
                         Infolists\Components\RepeatableEntry::make('items')
+                            ->getStateUsing(function (TransportAccommodationRecap $record) {
+                                $hrAreaId = static::getHrWorkAreaId();
+                                $items = $record->items()->with('sppd.employee')->get();
+                                if (! $hrAreaId) {
+                                    return $items;
+                                }
+                                $areaSppdIds = Sppd::whereHas('employee', fn ($eq) => $eq->where('work_area_id', $hrAreaId))->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+                                return $items->filter(function ($item) use ($hrAreaId, $areaSppdIds) {
+                                    if (! $item->sppd_id && empty($item->sppd_ids)) {
+                                        return true;
+                                    }
+                                    if ($item->sppd && (int) ($item->sppd->employee?->work_area_id ?? 0) === $hrAreaId) {
+                                        return true;
+                                    }
+                                    if (is_array($item->sppd_ids)) {
+                                        $itemIds = array_map('intval', $item->sppd_ids);
+
+                                        return ! empty(array_intersect($itemIds, $areaSppdIds));
+                                    }
+
+                                    return false;
+                                })->values();
+                            })
                             ->label('')
                             ->columns(['default' => 1, 'md' => 4])
                             ->schema([

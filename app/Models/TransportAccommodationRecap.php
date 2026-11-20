@@ -46,12 +46,44 @@ class TransportAccommodationRecap extends Model
 
     public function resolveSignatories(): array
     {
-        $ids = is_array($this->business_trip_ids) ? $this->business_trip_ids : [];
-        if ($this->business_trip_id && ! in_array($this->business_trip_id, $ids)) {
-            $ids[] = $this->business_trip_id;
+        return BusinessTrip::resolveSignatoriesForRecap($this);
+    }
+
+    public static function generateRecapNumber(self $recap): string
+    {
+        $year = date('Y');
+        $month = date('m');
+
+        $deptCode = Department::whereKey($recap->department_id)->value('code')
+            ?? Department::where('code', 'MESI')->value('code')
+            ?? 'MESI';
+
+        $areaCode = 'JKT';
+        if (\Illuminate\Support\Facades\Schema::hasTable('work_areas')) {
+            $involvedAreaIds = BusinessTrip::resolveInvolvedWorkAreaIdsForRecap($recap);
+            if (count($involvedAreaIds) === 1) {
+                $areaCode = WorkArea::whereKey($involvedAreaIds[0])->value('code') ?: 'JKT';
+            } elseif (empty($involvedAreaIds) && $recap->creator_id) {
+                $creatorAreaCode = Employee::where('user_id', $recap->creator_id)
+                    ->with('workArea')
+                    ->first()
+                    ?->workArea?->code;
+                if ($creatorAreaCode) {
+                    $areaCode = $creatorAreaCode;
+                }
+            }
         }
 
-        return BusinessTrip::resolveSignatoriesForTrips($ids, $this->department_id);
+        $count = static::whereYear('created_at', $year)->whereNotNull('recap_number')->count();
+        $seq = $count + 1;
+
+        do {
+            $nextSeq = str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+            $candidate = "{$nextSeq}/{$deptCode}/{$areaCode}/{$month}/{$year}";
+            $seq++;
+        } while (static::where('recap_number', $candidate)->exists());
+
+        return $candidate;
     }
 
     protected static function booted(): void
@@ -107,6 +139,9 @@ class TransportAccommodationRecap extends Model
             if (empty($recap->approved_by_name) && $sig['approved_by']) {
                 $recap->approved_by_name = $sig['approved_by']->name;
                 $recap->approved_by_position = $sig['approved_by']->position?->name ?? 'Division Head';
+            }
+            if (empty($recap->recap_number)) {
+                $recap->recap_number = static::generateRecapNumber($recap);
             }
         });
 

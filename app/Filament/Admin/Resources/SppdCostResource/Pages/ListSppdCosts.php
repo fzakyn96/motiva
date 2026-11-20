@@ -12,7 +12,7 @@ class ListSppdCosts extends ListRecords
 {
     protected static string $resource = SppdCostResource::class;
 
-    protected static ?string $title = 'Daftar Perhitungan Biaya SPPD';
+    protected static ?string $title = 'Perhitungan Biaya SPPD';
 
     protected function getHeaderActions(): array
     {
@@ -28,9 +28,22 @@ class ListSppdCosts extends ListRecords
                     \Filament\Forms\Components\Select::make('business_trip_id')
                         ->label('Pilih Nomor Memo Penugasan')
                         ->options(function (): array {
-                            return \App\Models\BusinessTrip::whereHas('sppds', fn (Builder $q) => $q->where('status', 'approved'))
+                            $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                            $areaId = ($user && ! $user->hasAnyRole(['Superadmin', 'Admin'])) ? $user->employee?->work_area_id : null;
+
+                            return \App\Models\BusinessTrip::whereHas('sppds', function (Builder $q) use ($areaId) {
+                                $q->where('status', 'approved');
+                                if ($areaId) {
+                                    $q->whereHas('employee', fn (Builder $eq) => $eq->where('work_area_id', $areaId));
+                                }
+                            })
                                 ->with(['memo'])
-                                ->withCount(['sppds as approved_sppds_count' => fn (Builder $q) => $q->where('status', 'approved')])
+                                ->withCount(['sppds as approved_sppds_count' => function (Builder $q) use ($areaId) {
+                                    $q->where('status', 'approved');
+                                    if ($areaId) {
+                                        $q->whereHas('employee', fn (Builder $eq) => $eq->where('work_area_id', $areaId));
+                                    }
+                                }])
                                 ->orderByDesc('id')
                                 ->get()
                                 ->mapWithKeys(function (\App\Models\BusinessTrip $trip): array {
@@ -45,8 +58,12 @@ class ListSppdCosts extends ListRecords
                         ->required(),
                 ])
                 ->action(function (array $data): void {
+                    $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                    $areaId = ($user && ! $user->hasAnyRole(['Superadmin', 'Admin'])) ? $user->employee?->work_area_id : null;
+
                     $firstSppd = Sppd::where('business_trip_id', $data['business_trip_id'])
                         ->where('status', 'approved')
+                        ->when($areaId, fn (Builder $q) => $q->whereHas('employee', fn (Builder $eq) => $eq->where('work_area_id', $areaId)))
                         ->orderBy('id')
                         ->first();
 
@@ -66,13 +83,13 @@ class ListSppdCosts extends ListRecords
     {
         return [
             'all' => Tab::make('Semua SPPD')
-                ->badge(fn () => Sppd::where('status', 'approved')->count()),
+                ->badge(fn () => SppdCostResource::getEloquentQuery()->count()),
             'uncalculated' => Tab::make('Belum Dihitung')
-                ->badge(fn () => Sppd::where('status', 'approved')->whereDoesntHave('cost')->count())
+                ->badge(fn () => SppdCostResource::getEloquentQuery()->whereDoesntHave('cost')->count())
                 ->badgeColor('warning')
                 ->modifyQueryUsing(fn (Builder $query) => $query->whereDoesntHave('cost')),
             'calculated' => Tab::make('Sudah Dihitung')
-                ->badge(fn () => Sppd::where('status', 'approved')->whereHas('cost')->count())
+                ->badge(fn () => SppdCostResource::getEloquentQuery()->whereHas('cost')->count())
                 ->badgeColor('success')
                 ->modifyQueryUsing(fn (Builder $query) => $query->whereHas('cost')),
         ];

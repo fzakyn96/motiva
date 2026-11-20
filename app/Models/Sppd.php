@@ -88,15 +88,107 @@ class Sppd extends Model
             return 'Menunggu Persetujuan';
         }
 
-        if ($step->policyStep?->step_order === 1) {
+        if ($step->policyStep?->resolver_class === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class) {
             return 'Menunggu Supervisor';
         }
 
-        if ($step->policyStep?->step_order === 2) {
-            return 'Menunggu Manajer (Disetujui SPV)';
+        if ($step->policyStep?->resolver_class === \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class) {
+            $hasSpvStep = $request->steps()
+                ->whereHas('policyStep', fn ($q) => $q->where('resolver_class', \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class))
+                ->exists();
+
+            return $hasSpvStep ? 'Menunggu Manajer (Disetujui SPV)' : 'Menunggu Manajer';
         }
 
         return 'Menunggu Persetujuan';
+    }
+
+    /**
+     * Determine whether the employee's work area / department has a Supervisor.
+     */
+    public function hasAreaSupervisor(): bool
+    {
+        return $this->resolveAreaSupervisor() !== null;
+    }
+
+    /**
+     * Resolve the Supervisor for this SPPD's employee work area (if one exists).
+     */
+    public function resolveAreaSupervisor(): ?Employee
+    {
+        $isSupervisorEmployee = static function (?Employee $emp): bool {
+            if (! $emp) {
+                return false;
+            }
+            $emp->loadMissing(['position', 'user.roles']);
+            if ($emp->user && $emp->user->hasRole('Supervisor')) {
+                return true;
+            }
+            if ($emp->position) {
+                $code = strtoupper((string) $emp->position->code);
+                $name = strtoupper((string) $emp->position->name);
+                if ((int) $emp->position->level === 2 || $code === 'SPV' || str_contains($name, 'SUPERVISOR')) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        // 1. Dari approval request SPPD yang sudah disetujui oleh Supervisor
+        if ($this->exists) {
+            $sppdApproval = ApprovalRequest::where('document_type', self::class)
+                ->where('document_id', $this->id)
+                ->first();
+
+            if ($sppdApproval) {
+                $spvStep = $sppdApproval->steps()
+                    ->with(['approver.position', 'approver.user.roles', 'policyStep'])
+                    ->get()
+                    ->first(fn ($s) => $s->policyStep?->resolver_class === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class && $s->approver);
+
+                if ($spvStep && $spvStep->approver) {
+                    return $spvStep->approver;
+                }
+            }
+        }
+
+        // 2. Atasan langsung pegawai jika atasan langsungnya adalah Supervisor
+        $employee = $this->employee;
+        if ($employee) {
+            $employee->loadMissing(['manager.position', 'manager.user.roles']);
+            if ($isSupervisorEmployee($employee->manager)) {
+                return $employee->manager;
+            }
+
+            // 3. Cari pegawai berjabatan/role Supervisor di area kerja yang sama
+            if ($employee->work_area_id) {
+                return Employee::with(['position', 'user.roles'])
+                    ->where('work_area_id', $employee->work_area_id)
+                    ->where(function ($q) {
+                        $q->whereHas('user.roles', fn ($rq) => $rq->where('name', 'Supervisor'))
+                            ->orWhereHas('position', fn ($pq) => $pq->where('level', 2)
+                                ->orWhere('code', 'SPV')
+                                ->orWhere('name', 'like', '%Supervisor%'));
+                    })
+                    ->first();
+            }
+
+            // 4. Fallback bila tidak menggunakan work_area_id: cari Supervisor di department yang sama
+            if ($employee->department_id && (! \Illuminate\Support\Facades\Schema::hasTable('work_areas') || WorkArea::count() === 0)) {
+                return Employee::with(['position', 'user.roles'])
+                    ->where('department_id', $employee->department_id)
+                    ->where(function ($q) {
+                        $q->whereHas('user.roles', fn ($rq) => $rq->where('name', 'Supervisor'))
+                            ->orWhereHas('position', fn ($pq) => $pq->where('level', 2)
+                                ->orWhere('code', 'SPV')
+                                ->orWhere('name', 'like', '%Supervisor%'));
+                    })
+                    ->first();
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -18,7 +18,7 @@ class SppdApprovalResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
     protected static ?string $navigationGroup = 'Persetujuan';
-    protected static ?string $navigationLabel = 'Persetujuan SPPD';
+    protected static ?string $navigationLabel = 'SPPD';
     protected static ?string $slug = 'sppd-approvals';
     protected static ?string $modelLabel = 'Surat Perintah Perjalanan Dinas';
     protected static ?string $pluralModelLabel = 'Persetujuan SPPD';
@@ -212,6 +212,7 @@ class SppdApprovalResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
                 Tables\Columns\Layout\Split::make([
                     Tables\Columns\TextColumn::make('agenda')
@@ -238,11 +239,13 @@ class SppdApprovalResource extends Resource
                                 return 'Ditolak';
                             }
                             $step = $record->currentStep();
-                            if ($step && (int) $step->policyStep?->step_order === 1) {
+                            if ($step && $step->policyStep?->resolver_class === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class) {
                                 return 'Step 1: Menunggu SPV';
                             }
-                            if ($step && (int) $step->policyStep?->step_order === 2) {
-                                return 'Step 2: Menunggu Manajer (SPV Disetujui)';
+                            if ($step && $step->policyStep?->resolver_class === \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class) {
+                                $hasSpv = $record->steps->contains(fn ($s) => $s->policyStep?->resolver_class === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class);
+
+                                return $hasSpv ? 'Step 2: Menunggu Manajer (SPV Disetujui)' : 'Menunggu Manajer';
                             }
                             return 'Menunggu Persetujuan';
                         })
@@ -250,7 +253,7 @@ class SppdApprovalResource extends Resource
                             'Disetujui Sepenuhnya' => 'success',
                             'Ditolak' => 'danger',
                             'Step 2: Menunggu Manajer (SPV Disetujui)' => 'info',
-                            'Step 1: Menunggu SPV' => 'warning',
+                            'Step 1: Menunggu SPV', 'Menunggu Manajer' => 'warning',
                             default => 'warning',
                         }),
                 ])->from('md'),
@@ -335,7 +338,7 @@ class SppdApprovalResource extends Resource
                     ->icon('heroicon-o-document-magnifying-glass')
                     ->button()
                     ->size('sm')
-                    ->color('gray')
+                    ->color('primary')
                     ->url(fn (ApprovalRequest $record) => SppdResource::getUrl('review', ['record' => $record->document_id, 'from' => 'approvals']))
                     ->visible(fn (ApprovalRequest $record) => ! static::canUserActOnApproval($record)),
                 Tables\Actions\Action::make('print')

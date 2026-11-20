@@ -57,7 +57,7 @@ class SignatureVerificationController extends Controller
 
         $response = match (true) {
             $document instanceof Memo => app(MemoPrintController::class)($document, true),
-            $document instanceof Sppd => app(SppdPrintController::class)($document),
+            $document instanceof Sppd => app(SppdPrintController::class)($document, true),
             $document instanceof SppdCost => app(SppdCostPrintController::class)($document, true),
             $document instanceof TransportAccommodationRecap => app(RecapPrintController::class)->transport($document),
             $document instanceof OfficialTravelRecap => app(RecapPrintController::class)->travel($document),

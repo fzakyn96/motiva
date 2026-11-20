@@ -132,7 +132,7 @@ class RecapTableSupport
 
                     return ($employee && $req && $req->status === 'pending' && (new ApprovalResolver())->canApprove($req, $employee))
                         ? 'warning'
-                        : 'gray';
+                        : 'primary';
                 })
                 ->button()
                 ->size('sm'),
@@ -181,7 +181,7 @@ class RecapTableSupport
             Actions\Action::make('back')
                 ->label('Kembali')
                 ->icon('heroicon-o-arrow-left')
-                ->color('gray')
+                ->color('info')
                 ->url($indexUrl),
 
             Actions\Action::make('approve_recap')
@@ -402,7 +402,7 @@ class RecapTableSupport
                             return '<span class="text-sm text-gray-400">Belum ada tanda tangan elektronik yang tercatat.</span>';
                         }
 
-                        return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">'
+                        return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;width:100%;">'
                             . $sigs->map(function (\App\Models\DocumentSignature $sig): string {
                                 $name = e($sig->signer_name);
                                 $pos = e($sig->signer_position ?: $sig->role_label);
@@ -419,13 +419,15 @@ class RecapTableSupport
                                     . '</div>'
                                     . '<div>'
                                     . '<a href="' . $url . '" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:6px;background:#059669;color:#ffffff;font-size:12px;font-weight:600;text-decoration:none;">'
-                                    . 'Verifikasi Tanda Tangan &nearr;'
+                                    . 'Verifikasi Tanda Tangan'
                                     . '</a>'
                                     . '</div>'
                                     . '</div>';
                             })->implode('')
                             . '</div>';
                     })
+                    ->extraAttributes(['style' => 'width: 100%;'])
+                    ->extraEntryWrapperAttributes(['style' => 'width: 100%;'])
                     ->columnSpanFull(),
             ]);
     }
@@ -433,6 +435,7 @@ class RecapTableSupport
     public static function approvalTable(Table $table, string $recapResourceClass, string $printRouteName): Table
     {
         return $table
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
                 Tables\Columns\Layout\Split::make([
                     Tables\Columns\TextColumn::make('document.period_label')

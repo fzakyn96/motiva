@@ -23,7 +23,7 @@ class SppdCostApprovalResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-calculator';
     protected static ?string $navigationGroup = 'Persetujuan';
-    protected static ?string $navigationLabel = 'Persetujuan Biaya SPPD';
+    protected static ?string $navigationLabel = 'Biaya SPPD';
     protected static ?string $slug = 'sppd-cost-approvals';
     protected static ?string $modelLabel = 'Persetujuan Biaya SPPD';
     protected static ?string $pluralModelLabel = 'Persetujuan Biaya SPPD';
@@ -97,6 +97,7 @@ class SppdCostApprovalResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
                 Tables\Columns\Layout\Split::make([
                     Tables\Columns\TextColumn::make('sppd_number')
@@ -175,7 +176,7 @@ class SppdCostApprovalResource extends Resource
             ])
             ->actions([
                 Tables\Actions\Action::make('print')
-                    ->label('Lihat FM-BS-02')
+                    ->label('Cetak')
                     ->icon('heroicon-o-printer')
                     ->color('info')
                     ->button()

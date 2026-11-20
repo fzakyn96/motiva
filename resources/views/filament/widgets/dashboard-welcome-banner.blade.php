@@ -23,9 +23,11 @@
                     </x-filament::badge>
 
                     @if ($employee?->organization)
-                        <x-filament::badge color="gray" size="sm" icon="heroicon-m-building-library">
-                            {{ $employee->organization->name }}
-                        </x-filament::badge>
+                        <span class="hidden sm:inline-flex">
+                            <x-filament::badge color="gray" size="sm" icon="heroicon-m-building-library">
+                                {{ $employee->organization->name }}
+                            </x-filament::badge>
+                        </span>
                     @endif
 
                     @if ($employee?->workArea)
@@ -35,9 +37,11 @@
                     @endif
 
                     @if ($employee?->department)
-                        <x-filament::badge color="info" size="sm" icon="heroicon-m-building-office-2">
-                            Unit {{ $employee->department->name }}
-                        </x-filament::badge>
+                        <span class="hidden sm:inline-flex">
+                            <x-filament::badge color="info" size="sm" icon="heroicon-m-building-office-2">
+                                Unit {{ $employee->department->name }}
+                            </x-filament::badge>
+                        </span>
                     @endif
 
                     @if ($d['hasSignature'])
@@ -64,6 +68,8 @@
                 <!-- Portal Perjalanan Dinas Pegawai — Lengkapi formulir SPPD penugasan Anda dan ajukan klaim penggantian biaya (Reimbursement). -->
             @endif
         </x-slot>
+
+        <div class="hidden sm:block">
 
         @if ($user?->hasRole('Superadmin'))
             <x-filament::grid
@@ -485,6 +491,22 @@
                     {{ $d['hasSignature'] ? 'Pengaturan Tanda Tangan' : 'Atur Tanda Tangan (Wajib 1x)' }}
                 </x-filament::button>
             </x-filament::grid>
+        @endif
+        </div>
+
+        @if (! $d['hasSignature'])
+            <div class="sm:hidden">
+                <x-filament::button
+                    tag="a"
+                    :href="\App\Filament\Admin\Pages\SignatureSettingsPage::getUrl()"
+                    color="danger"
+                    size="sm"
+                    icon="heroicon-m-pencil-square"
+                    class="w-full"
+                >
+                    Atur Tanda Tangan Digital (Wajib 1x)
+                </x-filament::button>
+            </div>
         @endif
     </x-filament::section>
 </x-filament-widgets::widget>

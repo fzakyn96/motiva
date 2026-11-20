@@ -29,11 +29,133 @@ class BusinessTrip extends Model
     }
 
     /**
-     * Ensure 2-step recap approval request exists (Step 1: Manager -> Step 2: Division Head).
+     * Ensure recap approval request exists (Step 1..N: Required Area Managers -> Step N+1: Business Division Head -> Step N+2: Division Head).
      */
     public function ensureRecapApprovalRequestExists(?Employee $requester = null): ApprovalRequest
     {
         return static::createRecapApprovalFor($this, $requester, $this->memo?->department_id);
+    }
+
+    /**
+     * Resolve all work_area_ids represented by employees in a recap's items and business trips.
+     *
+     * @return list<int>
+     */
+    public static function resolveInvolvedWorkAreaIdsForRecap(\Illuminate\Database\Eloquent\Model $document): array
+    {
+        $sppdIds = [];
+
+        if ($document instanceof OfficialTravelRecap || $document instanceof TransportAccommodationRecap) {
+            $tripIds = is_array($document->business_trip_ids) ? $document->business_trip_ids : [];
+            if ($document->business_trip_id && ! in_array($document->business_trip_id, $tripIds)) {
+                $tripIds[] = $document->business_trip_id;
+            }
+            if (! empty($tripIds)) {
+                $tripSppdIds = Sppd::whereIn('business_trip_id', $tripIds)->pluck('id')->all();
+                $sppdIds = array_merge($sppdIds, $tripSppdIds);
+            }
+
+            if ($document->exists && method_exists($document, 'items')) {
+                $items = $document->relationLoaded('items') ? $document->items : $document->items()->get();
+                foreach ($items as $item) {
+                    if (! empty($item->sppd_id)) {
+                        $sppdIds[] = (int) $item->sppd_id;
+                    }
+                    if (! empty($item->sppd_ids) && is_array($item->sppd_ids)) {
+                        foreach ($item->sppd_ids as $sid) {
+                            $sppdIds[] = (int) $sid;
+                        }
+                    }
+                    if (! empty($item->sppd_cost_id)) {
+                        $costSppdId = SppdCost::whereKey($item->sppd_cost_id)->value('sppd_id');
+                        if ($costSppdId) {
+                            $sppdIds[] = (int) $costSppdId;
+                        }
+                    }
+                }
+            }
+        } elseif ($document instanceof self) {
+            $sppdIds = $document->sppds()->pluck('id')->all();
+        }
+
+        $sppdIds = array_values(array_unique(array_filter(array_map('intval', $sppdIds))));
+
+        if (empty($sppdIds)) {
+            return [];
+        }
+
+        return Sppd::whereIn('id', $sppdIds)
+            ->with('employee')
+            ->get()
+            ->pluck('employee.work_area_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Resolve signatories for a recap document (prepared_by, checked_by collection of all involved area managers, approved_by).
+     *
+     * @return array{prepared_by: ?Employee, checked_by: \Illuminate\Support\Collection<int, Employee>, approved_by: ?Employee}
+     */
+    public static function resolveSignatoriesForRecap(\Illuminate\Database\Eloquent\Model $document): array
+    {
+        if ($document instanceof self) {
+            return $document->resolveRecapSignatories();
+        }
+
+        $tripIds = is_array($document->business_trip_ids ?? null) ? $document->business_trip_ids : [];
+        if (! empty($document->business_trip_id) && ! in_array($document->business_trip_id, $tripIds)) {
+            $tripIds[] = $document->business_trip_id;
+        }
+
+        if ($document->exists && method_exists($document, 'items')) {
+            $sppdIds = [];
+            $items = $document->relationLoaded('items') ? $document->items : $document->items()->get();
+            foreach ($items as $item) {
+                if (! empty($item->sppd_id)) {
+                    $sppdIds[] = (int) $item->sppd_id;
+                }
+                if (! empty($item->sppd_ids) && is_array($item->sppd_ids)) {
+                    foreach ($item->sppd_ids as $sid) {
+                        $sppdIds[] = (int) $sid;
+                    }
+                }
+                if (! empty($item->sppd_cost_id)) {
+                    $costSppdId = SppdCost::whereKey($item->sppd_cost_id)->value('sppd_id');
+                    if ($costSppdId) {
+                        $sppdIds[] = (int) $costSppdId;
+                    }
+                }
+            }
+            $sppdIds = array_values(array_unique(array_filter(array_map('intval', $sppdIds))));
+            if (! empty($sppdIds)) {
+                $itemTripIds = Sppd::whereIn('id', $sppdIds)->whereNotNull('business_trip_id')->pluck('business_trip_id')->all();
+                $tripIds = array_values(array_unique(array_merge($tripIds, $itemTripIds)));
+            }
+        }
+
+        $sig = static::resolveSignatoriesForTrips($tripIds, $document->department_id ?? null);
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('work_areas')) {
+            $involvedAreaIds = static::resolveInvolvedWorkAreaIdsForRecap($document);
+            if (! empty($involvedAreaIds)) {
+                $areas = WorkArea::with(['coordinator.position', 'coordinator.department', 'coordinator.user'])
+                    ->whereIn('id', $involvedAreaIds)
+                    ->orderBy('id')
+                    ->get();
+                foreach ($areas as $area) {
+                    $coord = $area->coordinator;
+                    if ($coord && ! $coord->isBusinessDivisionHead() && ! $sig['checked_by']->contains('id', $coord->id)) {
+                        $sig['checked_by']->push($coord);
+                    }
+                }
+            }
+        }
+
+        return $sig;
     }
 
     public static function createRecapApprovalFor(
@@ -45,50 +167,50 @@ class BusinessTrip extends Model
             ->where('document_id', $document->getKey())
             ->first();
 
+        $sig = static::resolveSignatoriesForRecap($document);
+        $requiredManagersCount = max(1, $sig['checked_by']->count());
+
         if ($existing) {
-            return $existing;
+            static::syncPendingRecapManagerSteps($existing, $requiredManagersCount);
+
+            return $existing->fresh(['steps.policyStep']);
         }
 
         $hasBdhApprover = Employee::whereNotNull('user_id')
             ->whereHas('position', fn ($q) => $q->whereIn('code', ['BDH', 'BDH-PKJ'])->orWhere('name', 'like', '%Business Division Head%'))
             ->exists();
 
-        if ($hasBdhApprover) {
-            $policy = ApprovalPolicy::firstOrCreate(
-                ['model_type' => get_class($document) . ':3step'],
-                ['name' => 'Recap Reimbursement 3-Step Policy']
-            );
+        $policyKey = get_class($document) . ':mgr' . $requiredManagersCount . ($hasBdhApprover ? ':bdh' : '');
+        $policy = ApprovalPolicy::firstOrCreate(
+            ['model_type' => $policyKey],
+            ['name' => "Recap Reimbursement ({$requiredManagersCount} Manager" . ($hasBdhApprover ? ' + BDH + DivHead' : ' + DivHead') . ')']
+        );
 
+        $stepOrder = 1;
+        for ($i = 1; $i <= $requiredManagersCount; $i++) {
             ApprovalPolicyStep::updateOrCreate(
-                ['approval_policy_id' => $policy->id, 'step_order' => 1],
+                ['approval_policy_id' => $policy->id, 'step_order' => $stepOrder],
                 ['resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class]
             );
+            $stepOrder++;
+        }
 
+        if ($hasBdhApprover) {
             ApprovalPolicyStep::updateOrCreate(
-                ['approval_policy_id' => $policy->id, 'step_order' => 2],
+                ['approval_policy_id' => $policy->id, 'step_order' => $stepOrder],
                 ['resolver_class' => \App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver::class]
             );
-
-            ApprovalPolicyStep::updateOrCreate(
-                ['approval_policy_id' => $policy->id, 'step_order' => 3],
-                ['resolver_class' => \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class]
-            );
-        } else {
-            $policy = ApprovalPolicy::firstOrCreate(
-                ['model_type' => get_class($document)],
-                ['name' => 'Recap Reimbursement Policy']
-            );
-
-            ApprovalPolicyStep::firstOrCreate(
-                ['approval_policy_id' => $policy->id, 'step_order' => 1],
-                ['resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class]
-            );
-
-            ApprovalPolicyStep::firstOrCreate(
-                ['approval_policy_id' => $policy->id, 'step_order' => 2],
-                ['resolver_class' => \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class]
-            );
+            $stepOrder++;
         }
+
+        ApprovalPolicyStep::updateOrCreate(
+            ['approval_policy_id' => $policy->id, 'step_order' => $stepOrder],
+            ['resolver_class' => \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class]
+        );
+
+        ApprovalPolicyStep::where('approval_policy_id', $policy->id)
+            ->where('step_order', '>', $stepOrder)
+            ->delete();
 
         $policy->refresh();
 
@@ -114,6 +236,91 @@ class BusinessTrip extends Model
         }
 
         return $request;
+    }
+
+    /**
+     * Dynamically ensure a pending recap ApprovalRequest has enough Manager steps for all involved area managers.
+     */
+    public static function syncPendingRecapManagerSteps(ApprovalRequest $request, int $requiredManagersCount): void
+    {
+        if ($request->status !== 'pending') {
+            return;
+        }
+
+        $request->loadMissing('steps.policyStep');
+        $currentManagerStepsCount = $request->steps
+            ->filter(fn ($s) => $s->policyStep?->resolver_class === \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class)
+            ->count();
+
+        if ($currentManagerStepsCount >= $requiredManagersCount) {
+            return;
+        }
+
+        $hasBdhApprover = Employee::whereNotNull('user_id')
+            ->whereHas('position', fn ($q) => $q->whereIn('code', ['BDH', 'BDH-PKJ'])->orWhere('name', 'like', '%Business Division Head%'))
+            ->exists();
+
+        $policyKey = $request->document_type . ':mgr' . $requiredManagersCount . ($hasBdhApprover ? ':bdh' : '');
+        $policy = ApprovalPolicy::firstOrCreate(
+            ['model_type' => $policyKey],
+            ['name' => "Recap Reimbursement ({$requiredManagersCount} Manager" . ($hasBdhApprover ? ' + BDH + DivHead' : ' + DivHead') . ')']
+        );
+
+        $stepOrder = 1;
+        $managerPolicySteps = [];
+        for ($i = 1; $i <= $requiredManagersCount; $i++) {
+            $managerPolicySteps[] = ApprovalPolicyStep::updateOrCreate(
+                ['approval_policy_id' => $policy->id, 'step_order' => $stepOrder],
+                ['resolver_class' => \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class]
+            );
+            $stepOrder++;
+        }
+
+        $bdhPolicyStep = null;
+        if ($hasBdhApprover) {
+            $bdhPolicyStep = ApprovalPolicyStep::updateOrCreate(
+                ['approval_policy_id' => $policy->id, 'step_order' => $stepOrder],
+                ['resolver_class' => \App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver::class]
+            );
+            $stepOrder++;
+        }
+
+        $divPolicyStep = ApprovalPolicyStep::updateOrCreate(
+            ['approval_policy_id' => $policy->id, 'step_order' => $stepOrder],
+            ['resolver_class' => \App\Services\Approval\Resolvers\DivisionHeadAuthorityResolver::class]
+        );
+
+        $approvedMgrSteps = $request->steps
+            ->filter(fn ($s) => $s->status === 'approved' && $s->policyStep?->resolver_class === \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class)
+            ->values();
+
+        $request->steps()->delete();
+        $request->update(['approval_policy_id' => $policy->id]);
+
+        foreach ($managerPolicySteps as $idx => $pStep) {
+            $prev = $approvedMgrSteps->get($idx);
+            ApprovalStep::create([
+                'approval_request_id' => $request->id,
+                'approval_policy_step_id' => $pStep->id,
+                'status' => $prev ? 'approved' : 'pending',
+                'approver_employee_id' => $prev?->approver_employee_id,
+                'notes' => $prev?->notes,
+            ]);
+        }
+
+        if ($bdhPolicyStep) {
+            ApprovalStep::create([
+                'approval_request_id' => $request->id,
+                'approval_policy_step_id' => $bdhPolicyStep->id,
+                'status' => 'pending',
+            ]);
+        }
+
+        ApprovalStep::create([
+            'approval_request_id' => $request->id,
+            'approval_policy_step_id' => $divPolicyStep->id,
+            'status' => 'pending',
+        ]);
     }
 
     /**

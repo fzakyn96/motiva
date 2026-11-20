@@ -52,9 +52,28 @@ class OfficialTravelRecapResource extends Resource
         return (bool) $user?->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Manager', 'Division Head', 'Supervisor']);
     }
 
+    public static function getHrWorkAreaId(): ?int
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user || ! $user->hasRole('HR') || $user->hasAnyRole(['Superadmin', 'Admin', 'Manager', 'Division Head'])) {
+            return null;
+        }
+
+        return $user->employee?->work_area_id ? (int) $user->employee->work_area_id : null;
+    }
+
     public static function canView(Model $record): bool
     {
-        return static::canViewAny();
+        if (! static::canViewAny()) {
+            return false;
+        }
+
+        $hrAreaId = static::getHrWorkAreaId();
+        if ($hrAreaId) {
+            return static::getEloquentQuery()->whereKey($record->getKey())->exists();
+        }
+
+        return true;
     }
 
     public static function canCreate(): bool
@@ -75,12 +94,30 @@ class OfficialTravelRecapResource extends Resource
             return true;
         }
 
-        return RecapTableSupport::latestApproval($record)?->status !== 'approved';
+        return static::canView($record) && RecapTableSupport::latestApproval($record)?->status !== 'approved';
     }
 
     public static function canDelete(Model $record): bool
     {
         return static::canEdit($record);
+    }
+
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = parent::getEloquentQuery();
+        $hrAreaId = static::getHrWorkAreaId();
+        if ($hrAreaId) {
+            $userId = (\Filament\Facades\Filament::auth()->user() ?? auth()->user())?->id;
+            $query->where(function (\Illuminate\Database\Eloquent\Builder $q) use ($hrAreaId, $userId) {
+                if ($userId) {
+                    $q->where('creator_id', $userId);
+                }
+                $q->orWhereHas('items.sppd.employee', fn (\Illuminate\Database\Eloquent\Builder $eq) => $eq->where('work_area_id', $hrAreaId))
+                    ->orWhereHas('businessTrip.sppds.employee', fn (\Illuminate\Database\Eloquent\Builder $eq) => $eq->where('work_area_id', $hrAreaId));
+            });
+        }
+
+        return $query;
     }
 
     public static function form(Form $form): Form
@@ -97,14 +134,23 @@ class OfficialTravelRecapResource extends Resource
                         Forms\Components\Select::make('business_trip_ids')
                             ->label('Pilih Kegiatan / Dokumen SPPD dalam Periode Ini (Bisa pilih > 1)')
                             ->multiple()
-                            ->options(fn () => BusinessTrip::with(['memo.department', 'sppds.cost'])
-                                ->whereHas('sppds.cost')
-                                ->orderByDesc('id')
-                                ->get()
-                                ->mapWithKeys(fn (BusinessTrip $t) => [
-                                    $t->id => ($t->memo?->nomor_memo ? "{$t->memo->nomor_memo} — " : '') . $t->activity_name . ' (' . $t->sppds->count() . ' Pegawai)',
-                                ])
-                                ->toArray())
+                            ->options(function () {
+                                $hrAreaId = static::getHrWorkAreaId();
+
+                                return BusinessTrip::with(['memo.department', 'sppds.cost'])
+                                    ->whereHas('sppds', function ($q) use ($hrAreaId) {
+                                        $q->whereHas('cost');
+                                        if ($hrAreaId) {
+                                            $q->whereHas('employee', fn ($eq) => $eq->where('work_area_id', $hrAreaId));
+                                        }
+                                    })
+                                    ->orderByDesc('id')
+                                    ->get()
+                                    ->mapWithKeys(fn (BusinessTrip $t) => [
+                                        $t->id => ($t->memo?->nomor_memo ? "{$t->memo->nomor_memo} — " : '') . $t->activity_name . ' (' . $t->sppds->count() . ' Pegawai)',
+                                    ])
+                                    ->toArray();
+                            })
                             ->searchable()
                             ->live()
                             ->afterStateUpdated(function ($state, Forms\Set $set) use ($setting): void {
@@ -112,6 +158,7 @@ class OfficialTravelRecapResource extends Resource
                                 if (empty($ids)) {
                                     return;
                                 }
+                                $hrAreaId = static::getHrWorkAreaId();
                                 $trips = BusinessTrip::with(['memo.department', 'sppds.employee.department', 'sppds.cost'])->whereIn('id', $ids)->get();
                                 if ($trips->isEmpty()) {
                                     return;
@@ -119,6 +166,9 @@ class OfficialTravelRecapResource extends Resource
 
                                 $firstTrip = $trips->first();
                                 $allSppds = $trips->flatMap->sppds;
+                                if ($hrAreaId) {
+                                    $allSppds = $allSppds->filter(fn ($s) => (int) ($s->employee?->work_area_id ?? 0) === $hrAreaId)->values();
+                                }
                                 $unitNames = $allSppds->map(fn ($s) => $s->employee?->department?->name)->filter()->unique()->values();
                                 if ($unitNames->isEmpty() && $firstTrip->memo?->department?->name) {
                                     $unitNames = collect([$firstTrip->memo->department->name]);
@@ -153,6 +203,9 @@ class OfficialTravelRecapResource extends Resource
                                 foreach ($trips as $trip) {
                                     foreach ($trip->sppds as $sppd) {
                                         if (! $sppd->cost) {
+                                            continue;
+                                        }
+                                        if ($hrAreaId && (int) ($sppd->employee?->work_area_id ?? 0) !== $hrAreaId) {
                                             continue;
                                         }
                                         $empName = $sppd->employee?->name ?? '-';
@@ -210,7 +263,20 @@ class OfficialTravelRecapResource extends Resource
                     ->iconColor('info')
                     ->schema([
                         Forms\Components\Repeater::make('items')
-                            ->relationship('items')
+                            ->relationship(
+                                'items',
+                                modifyQueryUsing: function (\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder {
+                                    $hrAreaId = static::getHrWorkAreaId();
+                                    if ($hrAreaId) {
+                                        $query->where(function (\Illuminate\Database\Eloquent\Builder $q) use ($hrAreaId) {
+                                            $q->whereNull('sppd_id')
+                                                ->orWhereHas('sppd.employee', fn (\Illuminate\Database\Eloquent\Builder $eq) => $eq->where('work_area_id', $hrAreaId));
+                                        });
+                                    }
+
+                                    return $query;
+                                }
+                            )
                             ->label('Daftar SPPD')
                             ->addActionLabel('Tambah Baris SPPD')
                             ->reorderableWithButtons()
@@ -218,12 +284,20 @@ class OfficialTravelRecapResource extends Resource
                             ->schema([
                                 Forms\Components\Select::make('sppd_cost_id')
                                     ->label('Ambil dari Biaya SPPD (Opsional)')
-                                    ->options(fn () => SppdCost::with('sppd.employee')->orderByDesc('id')->get()->mapWithKeys(function (SppdCost $c): array {
-                                        $sppd = $c->sppd;
-                                        $label = ($sppd?->sppd_number ?: 'Draf') . ' - ' . ($sppd?->employee?->name ?? '-') . ' (Rp ' . number_format((float) $c->total_cost, 0, ',', '.') . ')';
+                                    ->options(function () {
+                                        $hrAreaId = static::getHrWorkAreaId();
 
-                                        return [$c->id => $label];
-                                    })->toArray())
+                                        return SppdCost::with('sppd.employee')
+                                            ->when($hrAreaId, fn ($q) => $q->whereHas('sppd.employee', fn ($eq) => $eq->where('work_area_id', $hrAreaId)))
+                                            ->orderByDesc('id')
+                                            ->get()
+                                            ->mapWithKeys(function (SppdCost $c): array {
+                                                $sppd = $c->sppd;
+                                                $label = ($sppd?->sppd_number ?: 'Draf') . ' - ' . ($sppd?->employee?->name ?? '-') . ' (Rp ' . number_format((float) $c->total_cost, 0, ',', '.') . ')';
+
+                                                return [$c->id => $label];
+                                            })->toArray();
+                                    })
                                     ->searchable()
                                     ->live()
                                     ->afterStateUpdated(function ($state, Forms\Set $set): void {
@@ -278,6 +352,7 @@ class OfficialTravelRecapResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
                 Tables\Columns\Layout\Split::make([
                     Tables\Columns\TextColumn::make('period_label')
@@ -331,6 +406,7 @@ class OfficialTravelRecapResource extends Resource
             ->schema([
                 Infolists\Components\Section::make('Ringkasan Rekap Perjalanan Dinas')
                     ->icon('heroicon-o-document-text')
+                    ->iconColor('primary')
                     ->columns(['default' => 1, 'md' => 3])
                     ->schema([
                         Infolists\Components\TextEntry::make('work_name')->label('Pekerjaan'),
@@ -378,8 +454,18 @@ class OfficialTravelRecapResource extends Resource
 
                 Infolists\Components\Section::make('Rincian Biaya Perjalanan Dinas (SPPD)')
                     ->icon('heroicon-o-list-bullet')
+                    ->iconColor('info')
                     ->schema([
                         Infolists\Components\RepeatableEntry::make('items')
+                            ->getStateUsing(function (OfficialTravelRecap $record) {
+                                $hrAreaId = static::getHrWorkAreaId();
+                                $items = $record->items()->with(['sppd.employee', 'sppdCost'])->get();
+                                if (! $hrAreaId) {
+                                    return $items;
+                                }
+
+                                return $items->filter(fn (OfficialTravelRecapItem $item) => ! $item->sppd || ! $item->sppd->employee?->work_area_id || (int) $item->sppd->employee->work_area_id === $hrAreaId)->values();
+                            })
                             ->label('')
                             ->columns(['default' => 1, 'md' => 4])
                             ->schema([

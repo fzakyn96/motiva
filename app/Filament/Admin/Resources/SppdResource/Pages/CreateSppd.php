@@ -30,11 +30,12 @@ class CreateSppd extends CreateRecord
         if (empty($data['sppd_number'])) {
             $year = now()->format('Y');
             $month = now()->format('m');
-            $employee = ! empty($data['employee_id']) ? Employee::with('department')->find($data['employee_id']) : null;
-            $deptCode = $employee?->department?->code ?? 'GEN';
+            $employee = ! empty($data['employee_id']) ? Employee::with(['department', 'workArea'])->find($data['employee_id']) : null;
+            $deptCode = $employee?->department?->code ?? 'MESI';
+            $areaCode = $employee?->workArea?->code ?? 'JKT';
             $count = Sppd::whereYear('created_at', $year)->count();
             $seq = str_pad($count + 1, 4, '0', STR_PAD_LEFT);
-            $data['sppd_number'] = "{$seq}/SPPD/{$deptCode}/{$month}/{$year}";
+            $data['sppd_number'] = "{$seq}/{$deptCode}/{$areaCode}/{$month}/{$year}";
         }
 
         if (empty($data['status'])) {

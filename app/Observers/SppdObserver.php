@@ -57,17 +57,25 @@ class SppdObserver
         $year = date('Y');
         $month = date('m');
 
-        $employee = $sppd->employee ?? \App\Models\Employee::with('department')->find($sppd->employee_id);
+        $employee = $sppd->employee ?? \App\Models\Employee::with(['department', 'workArea'])->find($sppd->employee_id);
         $deptCode = $employee?->department?->code
             ?? $sppd->businessTrip?->memo?->department?->code
-            ?? 'GEN';
+            ?? 'MESI';
+
+        $areaCode = 'JKT';
+        if (\Illuminate\Support\Facades\Schema::hasTable('work_areas')) {
+            $employee?->loadMissing('workArea');
+            $areaCode = $employee?->workArea?->code
+                ?? $sppd->businessTrip?->memo?->creator?->workArea?->code
+                ?? 'JKT';
+        }
 
         $count = Sppd::whereYear('created_at', $year)->whereNotNull('sppd_number')->count();
         $seq = $count + 1;
 
         do {
             $nextSeq = str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
-            $candidate = "{$nextSeq}/SPPD/{$deptCode}/{$month}/{$year}";
+            $candidate = "{$nextSeq}/{$deptCode}/{$areaCode}/{$month}/{$year}";
             $seq++;
         } while (Sppd::where('sppd_number', $candidate)->exists());
 
@@ -87,22 +95,37 @@ class SppdObserver
             return $existing;
         }
 
-        // Ambil policy SPPD atau buat default policy bila belum ada (Supervisor -> Manager)
-        $policy = ApprovalPolicy::firstOrCreate(
-            ['model_type' => Sppd::class],
-            ['name' => 'SPPD Default Policy']
-        );
+        $sppd->loadMissing(['employee.manager.position', 'employee.manager.user']);
+        $hasSupervisor = $sppd->hasAreaSupervisor();
 
-        // Pastikan policy steps tersedia (Step 1: Supervisor, Step 2: Manager)
-        ApprovalPolicyStep::firstOrCreate(
-            ['approval_policy_id' => $policy->id, 'step_order' => 1],
-            ['resolver_class' => SupervisorAuthorityResolver::class]
-        );
+        if ($hasSupervisor) {
+            // Policy SPPD 2 tahap (Step 1: Supervisor -> Step 2: Manager)
+            $policy = ApprovalPolicy::firstOrCreate(
+                ['model_type' => Sppd::class],
+                ['name' => 'SPPD Default Policy']
+            );
 
-        ApprovalPolicyStep::firstOrCreate(
-            ['approval_policy_id' => $policy->id, 'step_order' => 2],
-            ['resolver_class' => ManagerAuthorityResolver::class]
-        );
+            ApprovalPolicyStep::firstOrCreate(
+                ['approval_policy_id' => $policy->id, 'step_order' => 1],
+                ['resolver_class' => SupervisorAuthorityResolver::class]
+            );
+
+            ApprovalPolicyStep::firstOrCreate(
+                ['approval_policy_id' => $policy->id, 'step_order' => 2],
+                ['resolver_class' => ManagerAuthorityResolver::class]
+            );
+        } else {
+            // Policy SPPD 1 tahap langsung ke Manajer (untuk area kerja yang tidak memiliki Supervisor)
+            $policy = ApprovalPolicy::firstOrCreate(
+                ['model_type' => Sppd::class . ':direct_manager'],
+                ['name' => 'SPPD Direct Manager Policy']
+            );
+
+            ApprovalPolicyStep::firstOrCreate(
+                ['approval_policy_id' => $policy->id, 'step_order' => 1],
+                ['resolver_class' => ManagerAuthorityResolver::class]
+            );
+        }
 
         $policy->refresh();
 

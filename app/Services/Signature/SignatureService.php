@@ -78,10 +78,39 @@ class SignatureService
             $sigType = 'qrcode';
         }
 
-        $existing = DocumentSignature::where('document_type', get_class($document))
+        $existingQuery = DocumentSignature::where('document_type', get_class($document))
             ->where('document_id', $document->getKey())
-            ->where('role_type', $roleType)
-            ->first();
+            ->where('role_type', $roleType);
+
+        if ($roleType === 'manager' && $signerEmployee && in_array(get_class($document), [\App\Models\TransportAccommodationRecap::class, \App\Models\OfficialTravelRecap::class], true)) {
+            $existingQuery->where('employee_id', $signerEmployee->id);
+            $existing = $existingQuery->first();
+            $token = $existing?->token ?: bin2hex(random_bytes(20));
+
+            return DocumentSignature::updateOrCreate(
+                [
+                    'document_type' => get_class($document),
+                    'document_id' => $document->getKey(),
+                    'role_type' => $roleType,
+                    'employee_id' => $signerEmployee->id,
+                ],
+                [
+                    'token' => $token,
+                    'document_number' => $this->resolveDocumentNumber($document),
+                    'user_id' => $user?->id,
+                    'signer_name' => $signerEmployee->name ?? $user?->name ?? 'Pejabat Berwenang',
+                    'signer_position' => $signerEmployee->position?->name ?? null,
+                    'signer_nip' => $signerEmployee->identity_number ?? null,
+                    'signature_type' => $sigType,
+                    'signature_snapshot' => $visualUri ?? $existing?->signature_snapshot,
+                    'signed_at' => now(),
+                    'notes' => $notes,
+                    'ip_address' => request()?->ip(),
+                ]
+            );
+        }
+
+        $existing = $existingQuery->first();
 
         $token = $existing?->token ?: bin2hex(random_bytes(20));
 
@@ -134,18 +163,26 @@ class SignatureService
 
         $setting = SignatureSetting::current();
 
-        $docSig = DocumentSignature::where('document_type', get_class($document))
+        $docSigQuery = DocumentSignature::where('document_type', get_class($document))
             ->where('document_id', $document->getKey())
-            ->where('role_type', $roleType)
-            ->latest('signed_at')
-            ->first();
+            ->where('role_type', $roleType);
+
+        if ($signerEmployee && $roleType === 'manager' && in_array(get_class($document), [\App\Models\TransportAccommodationRecap::class, \App\Models\OfficialTravelRecap::class], true)) {
+            $docSig = (clone $docSigQuery)->where('employee_id', $signerEmployee->id)->latest('signed_at')->first()
+                ?? $docSigQuery->latest('signed_at')->first();
+        } else {
+            $docSig = $docSigQuery->latest('signed_at')->first();
+        }
 
         if (! $docSig && in_array($roleType, ['manager', 'approver'], true)) {
-            $docSig = DocumentSignature::where('document_type', get_class($document))
+            $fallbackQuery = DocumentSignature::where('document_type', get_class($document))
                 ->where('document_id', $document->getKey())
-                ->whereIn('role_type', ['manager', 'approver'])
-                ->latest('signed_at')
-                ->first();
+                ->whereIn('role_type', ['manager', 'approver']);
+            if ($signerEmployee && in_array(get_class($document), [\App\Models\TransportAccommodationRecap::class, \App\Models\OfficialTravelRecap::class], true)) {
+                $docSig = (clone $fallbackQuery)->where('employee_id', $signerEmployee->id)->latest('signed_at')->first();
+            } else {
+                $docSig = $fallbackQuery->latest('signed_at')->first();
+            }
         }
 
         $signerUser = $docSig?->user ?? $signerEmployee?->user;

@@ -45,6 +45,9 @@
         Rekapitulasi Biaya Reimbursement Transportasi dan Akomodasi<br>
         {{ $workName }}<br>
         Periode {{ $periodLabel }}
+        @if(!empty($trip->recap_number))
+            <div style="font-size: 9.5px; font-weight: normal; margin-top: 2px;">{{ $trip->recap_number }}</div>
+        @endif
     </div>
 
     <div class="intro">
@@ -115,9 +118,13 @@
                 ])
             </td>
             @foreach ($checkedBy as $checker)
+                @php
+                    $isCheckerSigned = ($step1Approved ?? false)
+                        || ($checker && in_array((int) $checker->id, $approvedManagerIds ?? [], true));
+                @endphp
                 <td class="sign-space">
                     @include('signatures.pdf-stamp', [
-                        'render' => $sigService->resolveRenderData($trip, $checker, 'manager', $step1Approved ?? false),
+                        'render' => $sigService->resolveRenderData($trip, $checker, 'manager', $isCheckerSigned),
                         'align' => 'center',
                         'emptyHeight' => '55px',
                     ])

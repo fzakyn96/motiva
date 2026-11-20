@@ -65,7 +65,16 @@ class MemoResource extends Resource
             return false;
         }
 
-        if ($user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+        if ($user->hasAnyRole(['Superadmin', 'Admin'])) {
+            return true;
+        }
+
+        $employee = $user->employee;
+        if ($user->hasRole('HR')) {
+            if ($employee?->work_area_id) {
+                return static::getEloquentQuery()->whereKey($record->getKey())->exists();
+            }
+
             return true;
         }
 
@@ -85,7 +94,7 @@ class MemoResource extends Resource
         }
 
         if ($user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
-            return $record->status === 'draft';
+            return $record->status === 'draft' && static::canView($record);
         }
 
         return false;
@@ -98,7 +107,7 @@ class MemoResource extends Resource
             return false;
         }
 
-        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']) && static::canView($record);
     }
 
     public static function canDeleteAny(): bool
@@ -127,12 +136,24 @@ class MemoResource extends Resource
         $query = parent::getEloquentQuery();
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
 
-        if (! $user || $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+        if (! $user || $user->hasAnyRole(['Superadmin', 'Admin'])) {
             return $query;
         }
 
         $employee = $user->employee;
         if (! $employee) {
+            return $query;
+        }
+
+        if ($employee->work_area_id) {
+            return $query->where(function (Builder $q) use ($employee) {
+                $q->where('creator_employee_id', $employee->id)
+                    ->orWhereHas('creator', fn (Builder $cq) => $cq->where('work_area_id', $employee->work_area_id))
+                    ->orWhereHas('businessTrips.sppds.employee', fn (Builder $eq) => $eq->where('work_area_id', $employee->work_area_id));
+            });
+        }
+
+        if ($user->hasRole('HR')) {
             return $query;
         }
 
@@ -442,6 +463,7 @@ class MemoResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
                 Tables\Columns\Layout\Split::make([
                     Tables\Columns\TextColumn::make('agenda')
@@ -521,7 +543,7 @@ class MemoResource extends Resource
                     ->icon('heroicon-o-document-magnifying-glass')
                     ->button()
                     ->size('sm')
-                    ->color('gray')
+                    ->color('primary')
                     ->url(fn (Memo $record) => MemoResource::getUrl('review', ['record' => $record]))
                     ->visible(fn (Memo $record) => $record->status !== 'pending'),
                 Tables\Actions\Action::make('print')

@@ -15,6 +15,12 @@ class MemoPrintController extends Controller
         if (! $bypassAuth) {
             $user = auth()->user();
             abort_if(! $user || ($user->hasRole('Staff') && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Manager'])), 403);
+            if ($user->hasRole('HR') && ! $user->hasAnyRole(['Superadmin', 'Admin']) && $user->employee?->work_area_id) {
+                $memo->loadMissing('creator');
+                if ($memo->creator?->work_area_id && (int) $memo->creator->work_area_id !== (int) $user->employee->work_area_id) {
+                    abort(403, 'Akses memo area kerja lain tidak diizinkan.');
+                }
+            }
         }
 
         $memo->load(['creator.position', 'creator.manager.position', 'department']);

@@ -12,7 +12,7 @@ class ListSppdApprovals extends ListRecords
 {
     protected static string $resource = SppdApprovalResource::class;
 
-    protected static ?string $title = 'Daftar Persetujuan SPPD';
+    protected static ?string $title = 'Persetujuan SPPD';
 
     protected function getHeaderActions(): array
     {

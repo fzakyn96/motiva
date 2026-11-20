@@ -61,14 +61,28 @@ class MemoObserver
         $month = date('m');
 
         $dept = \App\Models\Department::find($memo->department_id);
-        $deptCode = $dept ? ($dept->code ?? 'GEN') : 'GEN';
+        $deptCode = $dept ? ($dept->code ?? 'MESI') : 'MESI';
+
+        $areaCode = 'JKT';
+        if (\Illuminate\Support\Facades\Schema::hasTable('work_areas')) {
+            $creator = $memo->creator ?? \App\Models\Employee::with('workArea')->find($memo->creator_employee_id);
+            $areaCode = $creator?->workArea?->code ?: null;
+
+            if (! $areaCode && ! empty($memo->participants) && is_array($memo->participants)) {
+                $firstParticipantId = is_array($memo->participants[0]) ? ($memo->participants[0]['employee_id'] ?? null) : $memo->participants[0];
+                if (is_numeric($firstParticipantId)) {
+                    $areaCode = \App\Models\Employee::with('workArea')->find($firstParticipantId)?->workArea?->code;
+                }
+            }
+            $areaCode = $areaCode ?: 'JKT';
+        }
 
         $count = Memo::whereYear('created_at', $year)->whereNotNull('nomor_memo')->count();
         $seq = $count + 1;
 
         do {
             $nextSeq = str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
-            $candidate = "{$nextSeq}/MEMO/{$deptCode}/{$month}/{$year}";
+            $candidate = "{$nextSeq}/{$deptCode}/{$areaCode}/{$month}/{$year}";
             $seq++;
         } while (Memo::where('nomor_memo', $candidate)->exists());
 

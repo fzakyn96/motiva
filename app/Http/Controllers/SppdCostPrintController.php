@@ -28,6 +28,11 @@ class SppdCostPrintController extends Controller
             if (! $user->hasRole(['Superadmin', 'Admin', 'HR', 'Manager', 'Division Head']) && (int) $sppd?->employee?->user_id !== (int) $user->id) {
                 abort(403, 'Akses formulir biaya SPPD tidak diizinkan.');
             }
+            if ($user->hasRole('HR') && ! $user->hasAnyRole(['Superadmin', 'Admin']) && $user->employee?->work_area_id) {
+                if ($sppd?->employee?->work_area_id && (int) $sppd->employee->work_area_id !== (int) $user->employee->work_area_id) {
+                    abort(403, 'Akses formulir biaya SPPD area kerja lain tidak diizinkan.');
+                }
+            }
         }
 
         // Pejabat yang memberi perintah selalu Manajer

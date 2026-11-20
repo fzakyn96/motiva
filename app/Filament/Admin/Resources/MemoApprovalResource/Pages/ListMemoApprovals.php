@@ -12,7 +12,7 @@ class ListMemoApprovals extends ListRecords
 {
     protected static string $resource = MemoApprovalResource::class;
 
-    protected static ?string $title = 'Daftar Persetujuan Memo';
+    protected static ?string $title = 'Persetujuan Memo';
 
     protected function getHeaderActions(): array
     {

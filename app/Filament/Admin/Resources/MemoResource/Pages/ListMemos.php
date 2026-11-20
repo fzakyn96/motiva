@@ -10,7 +10,7 @@ class ListMemos extends ListRecords
 {
     protected static string $resource = MemoResource::class;
 
-    protected static ?string $title = 'Daftar Memo';
+    protected static ?string $title = 'Memo';
 
     public function mount(): void
     {

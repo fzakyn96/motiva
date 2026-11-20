@@ -113,6 +113,10 @@ class OfficialTravelRecap extends Model
                 $recap->approved_by_name = $sig['approved_by']->name;
                 $recap->approved_by_position = $sig['approved_by']->position?->name ?? 'Division Head';
             }
+
+            if (empty($recap->recap_number)) {
+                $recap->recap_number = static::generateRecapNumber($recap);
+            }
         });
 
         static::deleting(function (OfficialTravelRecap $recap): void {
@@ -136,12 +140,44 @@ class OfficialTravelRecap extends Model
 
     public function resolveSignatories(): array
     {
-        $ids = is_array($this->business_trip_ids) ? $this->business_trip_ids : [];
-        if ($this->business_trip_id && ! in_array($this->business_trip_id, $ids)) {
-            $ids[] = $this->business_trip_id;
+        return BusinessTrip::resolveSignatoriesForRecap($this);
+    }
+
+    public static function generateRecapNumber(self $recap): string
+    {
+        $year = date('Y');
+        $month = date('m');
+
+        $deptCode = Department::whereKey($recap->department_id)->value('code')
+            ?? Department::where('code', 'MESI')->value('code')
+            ?? 'MESI';
+
+        $areaCode = 'JKT';
+        if (\Illuminate\Support\Facades\Schema::hasTable('work_areas')) {
+            $involvedAreaIds = BusinessTrip::resolveInvolvedWorkAreaIdsForRecap($recap);
+            if (count($involvedAreaIds) === 1) {
+                $areaCode = WorkArea::whereKey($involvedAreaIds[0])->value('code') ?: 'JKT';
+            } elseif (empty($involvedAreaIds) && $recap->creator_id) {
+                $creatorAreaCode = Employee::where('user_id', $recap->creator_id)
+                    ->with('workArea')
+                    ->first()
+                    ?->workArea?->code;
+                if ($creatorAreaCode) {
+                    $areaCode = $creatorAreaCode;
+                }
+            }
         }
 
-        return BusinessTrip::resolveSignatoriesForTrips($ids, $this->department_id);
+        $count = static::whereYear('created_at', $year)->whereNotNull('recap_number')->count();
+        $seq = $count + 1;
+
+        do {
+            $nextSeq = str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+            $candidate = "{$nextSeq}/{$deptCode}/{$areaCode}/{$month}/{$year}";
+            $seq++;
+        } while (static::where('recap_number', $candidate)->exists());
+
+        return $candidate;
     }
 
     public function department(): BelongsTo
@@ -189,22 +225,29 @@ class OfficialTravelRecap extends Model
         $this->saveQuietly();
     }
 
-    public static function syncForMonth(int $month, int $year, ?int $creatorId = null): ?self
+    public static function syncForMonth(int $month, int $year, ?int $creatorId = null, ?int $workAreaId = null): ?self
     {
         $start = \Carbon\Carbon::create($year, $month, 1)->startOfDay();
         $end = $start->copy()->endOfMonth()->endOfDay();
 
-        $approvedCosts = SppdCost::with(['sppd.employee', 'sppd.businessTrip.memo'])
+        $approvedCostsQuery = SppdCost::with(['sppd.employee', 'sppd.businessTrip.memo'])
             ->where('status', 'approved')
-            ->whereHas('sppd', function ($q) use ($start, $end) {
-                $q->whereBetween('departure_date', [$start->toDateString(), $end->toDateString()])
-                    ->orWhere(function ($cq) use ($start, $end) {
-                        $cq->whereNull('departure_date')
-                            ->whereBetween('created_at', [$start, $end]);
-                    });
+            ->whereHas('sppd', function ($q) use ($start, $end, $workAreaId) {
+                $q->where(function ($dq) use ($start, $end) {
+                    $dq->whereBetween('departure_date', [$start->toDateString(), $end->toDateString()])
+                        ->orWhere(function ($cq) use ($start, $end) {
+                            $cq->whereNull('departure_date')
+                                ->whereBetween('created_at', [$start, $end]);
+                        });
+                });
+
+                if ($workAreaId) {
+                    $q->whereHas('employee', fn ($eq) => $eq->where('work_area_id', $workAreaId));
+                }
             })
-            ->orderBy('id')
-            ->get();
+            ->orderBy('id');
+
+        $approvedCosts = $approvedCostsQuery->get();
 
         if ($approvedCosts->isEmpty()) {
             return null;
@@ -214,7 +257,7 @@ class OfficialTravelRecap extends Model
         $periodLabel = $start->copy()->locale('id')->translatedFormat('F Y');
         $monthNameId = $start->copy()->locale('id')->translatedFormat('F');
 
-        $tripIds = $approvedCosts->pluck('sppd.business_trip_id')->filter()->unique()->values()->all();
+        $newTripIds = $approvedCosts->pluck('sppd.business_trip_id')->filter()->unique()->values()->all();
         $firstSppd = $approvedCosts->first()->sppd;
         $departmentId = $firstSppd?->employee?->department_id
             ?? $firstSppd?->businessTrip?->memo?->department_id
@@ -242,8 +285,8 @@ class OfficialTravelRecap extends Model
         if (! $recap) {
             $recap = static::create([
                 'department_id' => $departmentId,
-                'business_trip_id' => $tripIds[0] ?? null,
-                'business_trip_ids' => $tripIds,
+                'business_trip_id' => $newTripIds[0] ?? null,
+                'business_trip_ids' => $newTripIds,
                 'work_name' => $workName,
                 'period_label' => $periodLabel,
                 'period_month' => $monthNameId,
@@ -251,10 +294,16 @@ class OfficialTravelRecap extends Model
                 'creator_id' => $creatorId ?? auth()->id(),
             ]);
         } else {
+            $existingTripIds = is_array($recap->business_trip_ids) ? $recap->business_trip_ids : [];
+            if ($recap->business_trip_id) {
+                $existingTripIds[] = $recap->business_trip_id;
+            }
+            $mergedTripIds = array_values(array_unique(array_filter(array_merge($existingTripIds, $newTripIds))));
+
             $recap->update([
                 'department_id' => $departmentId ?? $recap->department_id,
-                'business_trip_id' => $tripIds[0] ?? $recap->business_trip_id,
-                'business_trip_ids' => $tripIds,
+                'business_trip_id' => $mergedTripIds[0] ?? $recap->business_trip_id,
+                'business_trip_ids' => $mergedTripIds,
                 'work_name' => $workName,
                 'period_month' => $monthNameId,
                 'period_label' => $periodLabel,
@@ -262,7 +311,15 @@ class OfficialTravelRecap extends Model
             ]);
         }
 
-        $recap->items()->delete();
+        if ($workAreaId) {
+            $recap->items()
+                ->whereHas('sppd.employee', fn ($eq) => $eq->where('work_area_id', $workAreaId))
+                ->delete();
+        } else {
+            $recap->items()->delete();
+        }
+
+        $baseSort = (int) $recap->items()->max('sort_order');
 
         foreach ($approvedCosts as $index => $cost) {
             $sppd = $cost->sppd;
@@ -285,11 +342,17 @@ class OfficialTravelRecap extends Model
                 'sppd_cost_id' => $cost->id,
                 'description' => "SPPD {$empName} dari {$origin} ke {$dest}{$dateRange}",
                 'amount' => (float) $cost->total_cost,
-                'sort_order' => $index + 1,
+                'sort_order' => $baseSort + $index + 1,
             ]);
         }
 
         $recap->recalculateTotals();
+
+        $pendingApproval = $recap->approvalRequests()->where('status', 'pending')->latest('id')->first();
+        if ($pendingApproval) {
+            $sig = BusinessTrip::resolveSignatoriesForRecap($recap);
+            BusinessTrip::syncPendingRecapManagerSteps($pendingApproval, max(1, $sig['checked_by']->count()));
+        }
 
         return $recap;
     }
@@ -297,14 +360,16 @@ class OfficialTravelRecap extends Model
     /**
      * @return array{months: int, items: int}
      */
-    public static function syncAllMissingMonths(?int $creatorId = null): array
+    public static function syncAllMissingMonths(?int $creatorId = null, ?int $workAreaId = null): array
     {
         $syncedCostIds = OfficialTravelRecapItem::whereNotNull('sppd_cost_id')
+            ->when($workAreaId, fn ($q) => $q->whereHas('sppd.employee', fn ($eq) => $eq->where('work_area_id', $workAreaId)))
             ->pluck('sppd_cost_id')
             ->all();
 
         $unsyncedCosts = SppdCost::with('sppd')
             ->where('status', 'approved')
+            ->when($workAreaId, fn ($q) => $q->whereHas('sppd.employee', fn ($eq) => $eq->where('work_area_id', $workAreaId)))
             ->when(! empty($syncedCostIds), fn ($q) => $q->whereNotIn('id', $syncedCostIds))
             ->get();
 
@@ -327,10 +392,12 @@ class OfficialTravelRecap extends Model
         $syncedItems = 0;
 
         foreach ($periods as [$year, $month]) {
-            $recap = static::syncForMonth($month, $year, $creatorId);
+            $recap = static::syncForMonth($month, $year, $creatorId, $workAreaId);
             if ($recap) {
                 $syncedMonths++;
-                $syncedItems += $recap->items()->count();
+                $syncedItems += $recap->items()
+                    ->when($workAreaId, fn ($q) => $q->whereHas('sppd.employee', fn ($eq) => $eq->where('work_area_id', $workAreaId)))
+                    ->count();
             }
         }
 

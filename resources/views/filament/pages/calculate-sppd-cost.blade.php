@@ -121,7 +121,7 @@
 
             @if ($record->cost)
                 <x-filament::button color="info" size="md" :href="route('sppd-costs.print', $record->cost)" tag="a" target="_blank" icon="heroicon-o-printer">
-                    Cetak FM-BS-02.00
+                    Cetak
                 </x-filament::button>
             @endif
         </div>

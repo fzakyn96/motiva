@@ -74,7 +74,7 @@ class EditSppd extends EditRecord
             Actions\Action::make('back')
                 ->label('Kembali')
                 ->icon('heroicon-o-arrow-left')
-                ->color('gray')
+                ->color('info')
                 ->url(fn () => static::getResource()::getUrl('index')),
 
             // Tombol Cetak SPPD hanya muncul jika formulir sudah disimpan dan diajukan (status bukan draft)

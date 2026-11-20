@@ -50,8 +50,13 @@ class ListOfficialTravelRecaps extends ListRecords
                         ->required(fn (\Filament\Forms\Get $get): bool => ! $get('sync_all_months')),
                 ])
                 ->action(function (array $data): void {
+                    $user = auth()->user();
+                    $hrAreaId = ($user && $user->hasRole('HR') && ! $user->hasAnyRole(['Superadmin', 'Admin']))
+                        ? ($user->employee?->work_area_id ? (int) $user->employee->work_area_id : null)
+                        : null;
+
                     if (! empty($data['sync_all_months'])) {
-                        $result = OfficialTravelRecap::syncAllMissingMonths(auth()->id());
+                        $result = OfficialTravelRecap::syncAllMissingMonths(auth()->id(), $hrAreaId);
                         if ($result['months'] === 0) {
                             Notification::make()
                                 ->title('Semua Bulan Sudah Tersinkron')
@@ -71,7 +76,7 @@ class ListOfficialTravelRecaps extends ListRecords
                         return;
                     }
 
-                    $recap = OfficialTravelRecap::syncForMonth((int) $data['month'], (int) $data['year'], auth()->id());
+                    $recap = OfficialTravelRecap::syncForMonth((int) $data['month'], (int) $data['year'], auth()->id(), $hrAreaId);
 
                     if (! $recap) {
                         Notification::make()

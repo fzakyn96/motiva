@@ -29,7 +29,8 @@ class ExecutiveRecentTripsWidget extends BaseWidget
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         $employee = $user?->employee;
-        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'HR', 'Division Head']) || (bool) $employee?->isBusinessDivisionHead();
+        $isAllAccess = ! $user || $user->hasRole(['Superadmin', 'Admin', 'Division Head']) || (bool) $employee?->isBusinessDivisionHead() || ($user->hasRole('HR') && ! $employee?->work_area_id);
+        $canCalculateCost = $user && $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
 
         $query = Sppd::query()
             ->with(['employee.position', 'employee.workArea', 'employee.department', 'businessTrip', 'cost'])
@@ -49,66 +50,77 @@ class ExecutiveRecentTripsWidget extends BaseWidget
 
         return $table
             ->query($query)
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
-                Tables\Columns\TextColumn::make('sppd_number')
-                    ->label('Nomor SPPD')
-                    ->weight('bold')
-                    ->color('primary')
-                    ->copyable()
-                    ->placeholder('Draf'),
+                Tables\Columns\Layout\Split::make([
+                    Tables\Columns\TextColumn::make('employee.name')
+                        ->label('Pegawai')
+                        ->weight('bold')
+                        ->description(function (Sppd $record) {
+                            $pos = $record->employee?->position?->name;
+                            $area = $record->employee?->workArea?->name
+                                ? ('Area ' . $record->employee->workArea->name)
+                                : ($record->employee?->department?->code ?? $record->employee?->department?->name);
+                            $parts = array_filter([$pos, $area]);
+                            return ! empty($parts) ? implode(' • ', $parts) : '-';
+                        }),
 
-                Tables\Columns\TextColumn::make('employee.name')
-                    ->label('Pegawai')
-                    ->description(function (Sppd $record) {
-                        $pos = $record->employee?->position?->name;
-                        $area = $record->employee?->workArea?->name
-                            ? ('Area ' . $record->employee->workArea->name)
-                            : ($record->employee?->department?->code ?? $record->employee?->department?->name);
-                        $parts = array_filter([$pos, $area]);
-                        return ! empty($parts) ? implode(' • ', $parts) : '-';
-                    }),
+                    Tables\Columns\TextColumn::make('destination')
+                        ->label('Tujuan Dinas')
+                        ->state(fn (Sppd $record) => $record->businessTrip?->destination ?? ($record->destination_location ?? '-'))
+                        ->icon('heroicon-o-map-pin'),
 
-                Tables\Columns\TextColumn::make('destination')
-                    ->label('Tujuan Dinas')
-                    ->state(fn (Sppd $record) => $record->businessTrip?->destination ?? ($record->destination_location ?? '-'))
-                    ->icon('heroicon-o-map-pin'),
+                    Tables\Columns\TextColumn::make('cost.total_cost')
+                        ->label('Biaya SPPD')
+                        ->formatStateUsing(fn ($state) => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : 'Belum dihitung')
+                        ->badge()
+                        ->color(fn ($state) => $state !== null ? 'success' : 'warning')
+                        ->placeholder('Belum dihitung')
+                        ->grow(false),
 
-                Tables\Columns\TextColumn::make('period')
-                    ->label('Jadwal Dinas')
-                    ->state(function (Sppd $record) {
-                        $start = $record->departure_date ?? ($record->businessTrip?->start_date);
-                        $end = $record->return_date ?? ($record->businessTrip?->end_date);
-                        $startF = $start ? Carbon::parse($start)->format('d/m/Y') : '-';
-                        $endF = $end ? Carbon::parse($end)->format('d/m/Y') : '-';
-                        $days = $record->total_days ?: ($start && $end ? Carbon::parse($start)->diffInDays(Carbon::parse($end)) + 1 : 0);
-                        return "{$startF} - {$endF}" . ($days ? " ({$days} Hari)" : '');
-                    })
-                    ->color('gray'),
+                    Tables\Columns\TextColumn::make('status')
+                        ->label('Status')
+                        ->badge()
+                        ->grow(false)
+                        ->formatStateUsing(fn (string $state): string => match ($state) {
+                            'draft' => 'Draf',
+                            'pending' => 'Menunggu',
+                            'approved' => 'Disetujui',
+                            'rejected' => 'Ditolak',
+                            default => ucfirst($state),
+                        })
+                        ->color(fn (string $state): string => match ($state) {
+                            'draft' => 'gray',
+                            'pending' => 'warning',
+                            'approved' => 'success',
+                            'rejected' => 'danger',
+                            default => 'gray',
+                        }),
+                ])->from('md'),
 
-                Tables\Columns\TextColumn::make('status')
-                    ->label('Status')
-                    ->badge()
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'draft' => 'Draf',
-                        'pending' => 'Menunggu',
-                        'approved' => 'Disetujui',
-                        'rejected' => 'Ditolak',
-                        default => ucfirst($state),
-                    })
-                    ->color(fn (string $state): string => match ($state) {
-                        'draft' => 'gray',
-                        'pending' => 'warning',
-                        'approved' => 'success',
-                        'rejected' => 'danger',
-                        default => 'gray',
-                    }),
+                Tables\Columns\Layout\Panel::make([
+                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2])
+                        ->schema([
+                            Tables\Columns\TextColumn::make('sppd_number')
+                                ->description('Nomor SPPD', position: 'above')
+                                ->weight('bold')
+                                ->color('primary')
+                                ->copyable()
+                                ->placeholder('Draf'),
 
-                Tables\Columns\TextColumn::make('cost.total_cost')
-                    ->label('Biaya SPPD')
-                    ->formatStateUsing(fn ($state) => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : 'Belum dihitung')
-                    ->weight('bold')
-                    ->color(fn ($state) => $state !== null ? 'success' : 'warning')
-                    ->placeholder('Belum dihitung'),
+                            Tables\Columns\TextColumn::make('period')
+                                ->description('Jadwal Dinas', position: 'above')
+                                ->state(function (Sppd $record) {
+                                    $start = $record->departure_date ?? ($record->businessTrip?->start_date);
+                                    $end = $record->return_date ?? ($record->businessTrip?->end_date);
+                                    $startF = $start ? Carbon::parse($start)->format('d/m/Y') : '-';
+                                    $endF = $end ? Carbon::parse($end)->format('d/m/Y') : '-';
+                                    $days = $record->total_days ?: ($start && $end ? Carbon::parse($start)->diffInDays(Carbon::parse($end)) + 1 : 0);
+                                    return "{$startF} - {$endF}" . ($days ? " ({$days} Hari)" : '');
+                                })
+                                ->color('gray'),
+                        ]),
+                ])->collapsible(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -127,7 +139,7 @@ class ExecutiveRecentTripsWidget extends BaseWidget
                     ->button()
                     ->size('sm')
                     ->color('warning')
-                    ->visible(fn (Sppd $record) => $isAllAccess && $record->status === 'approved' && ! $record->cost)
+                    ->visible(fn (Sppd $record) => $canCalculateCost && $record->status === 'approved' && ! $record->cost)
                     ->url(fn (Sppd $record) => SppdCostResource::getUrl('calculate', ['record' => $record])),
 
                 Tables\Actions\Action::make('print_sppd')
@@ -145,7 +157,7 @@ class ExecutiveRecentTripsWidget extends BaseWidget
                     ->icon('heroicon-o-eye')
                     ->button()
                     ->size('sm')
-                    ->color('gray')
+                    ->color('primary')
                     ->url(fn (Sppd $record) => SppdResource::getUrl('review', ['record' => $record])),
             ])
             ->paginated([5, 10]);

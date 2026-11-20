@@ -17,7 +17,7 @@ class MemoApprovalResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-check';
     protected static ?string $navigationGroup = 'Persetujuan';
-    protected static ?string $navigationLabel = 'Persetujuan Memo';
+    protected static ?string $navigationLabel = 'Memo';
     protected static ?string $slug = 'memo-approvals';
     protected static ?string $modelLabel = 'Memo';
     protected static ?string $pluralModelLabel = 'Persetujuan Memo';
@@ -130,6 +130,7 @@ class MemoApprovalResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->contentGrid(['default' => 1, 'xl' => 1])
             ->columns([
                 Tables\Columns\Layout\Split::make([
                     Tables\Columns\TextColumn::make('document.agenda')
@@ -149,7 +150,7 @@ class MemoApprovalResource extends Resource
                             default => 'heroicon-m-question-mark-circle',
                         })
                         ->formatStateUsing(fn (string $state): string => match ($state) {
-                            'pending' => 'Menunggu Persetujuan',
+                            'pending' => 'Persetujuan',
                             'approved' => 'Disetujui',
                             'rejected' => 'Ditolak',
                             default => ucfirst($state),
@@ -220,7 +221,7 @@ class MemoApprovalResource extends Resource
                     ->icon('heroicon-o-document-magnifying-glass')
                     ->button()
                     ->size('sm')
-                    ->color('gray')
+                    ->color('primary')
                     ->url(fn (\App\Models\ApprovalRequest $record) => \App\Filament\Admin\Resources\MemoResource::getUrl('review', ['record' => $record->document_id, 'from' => 'approvals']))
                     ->visible(fn (\App\Models\ApprovalRequest $record) => $record->status !== 'pending'),
                 Tables\Actions\Action::make('print')

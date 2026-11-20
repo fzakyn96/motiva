@@ -46,6 +46,7 @@ class RecapPrintController extends Controller
             'step0Approved' => $approvalFlags['step0Approved'],
             'step1Approved' => $approvalFlags['step1Approved'],
             'step2Approved' => $approvalFlags['step2Approved'],
+            'approvedManagerIds' => $approvalFlags['approvedManagerIds'],
             'periodMonth' => $recap->period_month,
             'periodLabel' => $recap->period_label,
             'workName' => $recap->work_name,
@@ -81,6 +82,7 @@ class RecapPrintController extends Controller
             'step0Approved' => $approvalFlags['step0Approved'],
             'step1Approved' => $approvalFlags['step1Approved'],
             'step2Approved' => $approvalFlags['step2Approved'],
+            'approvedManagerIds' => $approvalFlags['approvedManagerIds'],
             'periodMonth' => $recap->period_month,
             'periodLabel' => $recap->period_label,
             'workName' => $recap->work_name,
@@ -90,26 +92,38 @@ class RecapPrintController extends Controller
     }
 
     /**
-     * @return array{step0Approved: bool, step1Approved: bool, step2Approved: bool}
+     * @return array{step0Approved: bool, step1Approved: bool, step2Approved: bool, approvedManagerIds: list<int>}
      */
     protected function resolveApprovalFlags(Model $document): array
     {
         $req = $document->approvalRequests()->with('steps.policyStep')->latest('id')->first();
         if (! $req) {
-            return ['step0Approved' => false, 'step1Approved' => false, 'step2Approved' => false];
+            return ['step0Approved' => false, 'step1Approved' => false, 'step2Approved' => false, 'approvedManagerIds' => []];
         }
 
         $hasBdhStep = $req->steps->contains(fn ($s) => $s->policyStep?->resolver_class === BusinessDivisionHeadAuthorityResolver::class);
         $step0Approved = $hasBdhStep
             ? $req->steps->contains(fn ($s) => $s->status === 'approved' && $s->policyStep?->resolver_class === BusinessDivisionHeadAuthorityResolver::class)
             : true;
-        $step1Approved = $req->steps->contains(fn ($s) => $s->status === 'approved' && $s->policyStep?->resolver_class === ManagerAuthorityResolver::class);
+
+        $managerSteps = $req->steps->filter(fn ($s) => $s->policyStep?->resolver_class === ManagerAuthorityResolver::class);
+        $step1Approved = $managerSteps->isNotEmpty() && $managerSteps->every(fn ($s) => $s->status === 'approved');
+        $approvedManagerIds = $managerSteps
+            ->where('status', 'approved')
+            ->pluck('approver_employee_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
         $step2Approved = $req->steps->contains(fn ($s) => $s->status === 'approved' && $s->policyStep?->resolver_class === DivisionHeadAuthorityResolver::class);
 
         return [
             'step0Approved' => $step0Approved,
             'step1Approved' => $step1Approved,
             'step2Approved' => $step2Approved,
+            'approvedManagerIds' => $approvedManagerIds,
         ];
     }
 

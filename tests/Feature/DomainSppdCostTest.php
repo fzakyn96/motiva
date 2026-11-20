@@ -239,7 +239,7 @@ class DomainSppdCostTest extends TestCase
 
         Livewire::test(ListSppdCosts::class)
             ->assertSuccessful()
-            ->assertSeeHtml('Daftar Perhitungan Biaya SPPD');
+            ->assertSeeHtml('Perhitungan Biaya SPPD');
     }
 
     public function test_sppd_cost_requires_manager_approval_and_syncs_to_monthly_official_travel_recap(): void

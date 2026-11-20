@@ -318,7 +318,9 @@ class ExecutiveDashboardTest extends TestCase
             ->assertSuccessful()
             ->assertSee('Antrian Persetujuan')
             ->assertSee('Rekap Tiket & Akomodasi')
-            ->assertSee('Rekap Perjalanan Dinas');
+            ->assertSee('Rekap Perjalanan Dinas')
+            ->assertDontSee(\App\Filament\Admin\Resources\SppdApprovalResource::getUrl('index'))
+            ->assertDontSee(\App\Filament\Admin\Resources\SppdCostApprovalResource::getUrl('index'));
 
         Livewire::test(ExecutiveCostSummaryWidget::class)->assertSuccessful();
         Livewire::test(ExecutivePipelineChartWidget::class)->assertSuccessful();

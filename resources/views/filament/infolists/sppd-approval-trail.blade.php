@@ -16,8 +16,8 @@
     $step2 = null;
 
     if ($approvalRequest) {
-        $step1 = $approvalRequest->steps->first(fn ($s) => (int) $s->policyStep?->step_order === 1);
-        $step2 = $approvalRequest->steps->first(fn ($s) => (int) $s->policyStep?->step_order === 2);
+        $step1 = $approvalRequest->steps->first(fn ($s) => $s->policyStep?->resolver_class === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class);
+        $step2 = $approvalRequest->steps->first(fn ($s) => $s->policyStep?->resolver_class === \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class);
     }
 @endphp
 
@@ -29,7 +29,7 @@
             <div>
                 <h4 class="font-bold text-sm text-gray-950 dark:text-white">SPPD Telah Disetujui Sepenuhnya (Final Approved)</h4>
                 <p class="text-xs text-gray-600 dark:text-white mt-1 leading-relaxed">
-                    Surat Perintah Perjalanan Dinas ini telah mendapatkan persetujuan resmi dari Supervisor dan Manajer. Dokumen siap untuk dicetak dan direalisasikan.
+                    Surat Perintah Perjalanan Dinas ini telah mendapatkan persetujuan resmi. Dokumen siap untuk dicetak dan direalisasikan.
                 </p>
             </div>
         </div>
@@ -40,6 +40,16 @@
                 <h4 class="font-bold text-sm text-gray-950 dark:text-white">Pengajuan SPPD Ditolak</h4>
                 <p class="text-xs text-gray-600 dark:text-white mt-1 leading-relaxed">
                     Pengajuan perjalanan dinas ini ditolak. Silakan periksa catatan alasan penolakan di bawah.
+                </p>
+            </div>
+        </div>
+    @elseif (! $step1)
+        <div class="flex items-start gap-3 rounded-xl p-4 bg-gray-50 ring-1 ring-gray-950/5 dark:bg-white/5 dark:ring-white/10">
+            <x-filament::icon icon="heroicon-m-clock" class="w-5 h-5 shrink-0 mt-0.5" style="color: #f59e0b;" />
+            <div>
+                <h4 class="font-bold text-sm text-gray-950 dark:text-white">Menunggu Persetujuan Manajer</h4>
+                <p class="text-xs text-gray-600 dark:text-white mt-1 leading-relaxed">
+                    SPPD ini sedang menunggu verifikasi dan persetujuan tingkat akhir (Final Approval) oleh Manajer Area.
                 </p>
             </div>
         </div>
@@ -138,7 +148,7 @@
                     @if ($spvSig)
                         <div class="mt-2">
                             <a href="{{ $spvSig->verification_url }}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;background:#059669;color:#ffffff;font-size:11px;font-weight:600;text-decoration:none;">
-                                ✓ Verifikasi Tanda Tangan Supervisor &nearr;
+                                ✓ Verifikasi Tanda Tangan Supervisor
                             </a>
                         </div>
                     @endif
@@ -221,7 +231,7 @@
                     @if ($mgrSig)
                         <div class="mt-2">
                             <a href="{{ $mgrSig->verification_url }}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;background:#059669;color:#ffffff;font-size:11px;font-weight:600;text-decoration:none;">
-                                ✓ Verifikasi Tanda Tangan Manajer &nearr;
+                                ✓ Verifikasi Tanda Tangan Manajer
                             </a>
                         </div>
                     @endif
