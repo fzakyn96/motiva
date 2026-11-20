@@ -173,7 +173,7 @@ class OfficialTravelRecap extends Model
 
         do {
             $nextSeq = str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
-            $candidate = "{$nextSeq}/{$deptCode}/{$areaCode}/{$month}/{$year}";
+            $candidate = "{$nextSeq}/RPD/{$deptCode}/{$areaCode}/{$month}/{$year}";
             $seq++;
         } while (static::where('recap_number', $candidate)->exists());
 

@@ -80,6 +80,13 @@ class ApprovalResolver
                 );
             }
 
+            $notifier = app(ApprovalNotificationService::class);
+            if ($nextStep) {
+                $notifier->notifyPendingApprovers($request);
+            } else {
+                $notifier->notifyRequesterResult($request, 'approved', $notes);
+            }
+
             return true;
         });
     }
@@ -106,6 +113,8 @@ class ApprovalResolver
             if ($request->document && method_exists($request->document, 'update')) {
                 $request->document->update(['status' => 'rejected']);
             }
+
+            app(ApprovalNotificationService::class)->notifyRequesterResult($request, 'rejected', $notes);
 
             return true;
         });

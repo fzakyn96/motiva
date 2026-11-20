@@ -106,6 +106,21 @@ class Employee extends Model
         return in_array($code, ['BDH', 'BDH-PKJ'], true) || str_contains($name, 'BUSINESS DIVISION HEAD');
     }
 
+    public function isContractManager(): bool
+    {
+        $this->loadMissing('position');
+        if (! $this->position) {
+            return false;
+        }
+
+        $code = strtoupper((string) $this->position->code);
+        $name = strtoupper((string) $this->position->name);
+
+        return in_array($code, ['MGR-KTR'], true)
+            || str_contains($name, 'MANAJER KONTRAK')
+            || str_contains($name, 'CONTRACT MANAGER');
+    }
+
     public function isSameWorkAreaAsRequest(ApprovalRequest $request): bool
     {
         if (! $this->work_area_id) {

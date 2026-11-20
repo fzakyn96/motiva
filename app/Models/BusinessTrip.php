@@ -235,6 +235,8 @@ class BusinessTrip extends Model
             ]);
         }
 
+        app(\App\Services\Approval\ApprovalNotificationService::class)->notifyPendingApprovers($request);
+
         return $request;
     }
 

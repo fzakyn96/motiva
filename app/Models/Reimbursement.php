@@ -58,19 +58,25 @@ class Reimbursement extends Model
         });
     }
 
-    public static function generateNumber(): string
+    public static function generateNumber(?Employee $employee = null): string
     {
-        $prefix = 'RMB/' . date('Y/m') . '/';
-        $latest = static::where('reimbursement_number', 'like', $prefix . '%')
-            ->orderBy('id', 'desc')
-            ->first();
+        $year = date('Y');
+        $month = date('m');
+        $deptCode = $employee?->department?->code
+            ?? Department::where('code', 'MESI')->value('code')
+            ?? 'MESI';
+        $areaCode = $employee?->workArea?->code ?? 'JKT';
 
-        $seq = 1;
-        if ($latest && preg_match('/\/(\d{4})$/', $latest->reimbursement_number, $matches)) {
-            $seq = ((int) $matches[1]) + 1;
-        }
+        $count = static::whereYear('created_at', $year)->whereNotNull('reimbursement_number')->count();
+        $seq = $count + 1;
 
-        return $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+        do {
+            $nextSeq = str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+            $candidate = "{$nextSeq}/RMB/{$deptCode}/{$areaCode}/{$month}/{$year}";
+            $seq++;
+        } while (static::where('reimbursement_number', $candidate)->exists());
+
+        return $candidate;
     }
 
     /**

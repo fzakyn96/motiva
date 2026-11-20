@@ -75,7 +75,7 @@ class SppdObserver
 
         do {
             $nextSeq = str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
-            $candidate = "{$nextSeq}/{$deptCode}/{$areaCode}/{$month}/{$year}";
+            $candidate = "{$nextSeq}/SPPD/{$deptCode}/{$areaCode}/{$month}/{$year}";
             $seq++;
         } while (Sppd::where('sppd_number', $candidate)->exists());
 
@@ -144,6 +144,8 @@ class SppdObserver
                 'status' => 'pending',
             ]);
         }
+
+        app(\App\Services\Approval\ApprovalNotificationService::class)->notifyPendingApprovers($request);
 
         return $request;
     }

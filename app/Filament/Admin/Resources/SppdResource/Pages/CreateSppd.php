@@ -35,7 +35,7 @@ class CreateSppd extends CreateRecord
             $areaCode = $employee?->workArea?->code ?? 'JKT';
             $count = Sppd::whereYear('created_at', $year)->count();
             $seq = str_pad($count + 1, 4, '0', STR_PAD_LEFT);
-            $data['sppd_number'] = "{$seq}/{$deptCode}/{$areaCode}/{$month}/{$year}";
+            $data['sppd_number'] = "{$seq}/SPPD/{$deptCode}/{$areaCode}/{$month}/{$year}";
         }
 
         if (empty($data['status'])) {

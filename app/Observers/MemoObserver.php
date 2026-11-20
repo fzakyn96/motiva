@@ -82,7 +82,7 @@ class MemoObserver
 
         do {
             $nextSeq = str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
-            $candidate = "{$nextSeq}/{$deptCode}/{$areaCode}/{$month}/{$year}";
+            $candidate = "{$nextSeq}/MEMO/{$deptCode}/{$areaCode}/{$month}/{$year}";
             $seq++;
         } while (Memo::where('nomor_memo', $candidate)->exists());
 
@@ -122,6 +122,8 @@ class MemoObserver
                     'status' => 'pending',
                 ]);
             }
+
+            app(\App\Services\Approval\ApprovalNotificationService::class)->notifyPendingApprovers($request);
         }
 
         // Hanya generate SPPD jika memo langsung berstatus approved (misal seeder/manual)

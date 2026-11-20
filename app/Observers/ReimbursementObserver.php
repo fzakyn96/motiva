@@ -90,6 +90,8 @@ class ReimbursementObserver
             ]);
         }
 
+        app(\App\Services\Approval\ApprovalNotificationService::class)->notifyPendingApprovers($request);
+
         return $request;
     }
 }

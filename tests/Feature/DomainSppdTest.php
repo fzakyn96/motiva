@@ -1210,9 +1210,9 @@ class DomainSppdTest extends TestCase
         Livewire::test(\App\Filament\Admin\Resources\SppdApprovalResource\Pages\ListSppdApprovals::class)
             ->assertCanNotSeeTableRecords([$req1, $req2]);
         Livewire::test(\App\Filament\Admin\Widgets\SppdOverviewWidget::class)
-            ->assertSee('Semua SPPD telah ditinjau');
+            ->assertSee('Semua telah ditinjau');
         Livewire::test(\App\Filament\Admin\Widgets\ExecutiveOverviewWidget::class)
-            ->assertSee('Seluruh SPPD telah diverifikasi');
+            ->assertSee('Semua terverifikasi');
 
         $this->actingAs($mgrUser);
         $this->assertTrue(\App\Filament\Admin\Resources\SppdApprovalResource::canUserActOnApproval($req1->fresh(), $mgrUser));

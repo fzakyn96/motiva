@@ -58,8 +58,17 @@ services:
         "redis",
         "--sleep=1",
         "--tries=3",
-        "--timeout=90"
+        "--timeout=90",
+        "--max-jobs=1000",
+        "--max-time=3600"
       ]
+
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa 'queue:work' /proc/1/cmdline || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
     depends_on:
       sqlserver:
@@ -93,6 +102,13 @@ services:
         "-c",
         "while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"
       ]
+
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa 'schedule:run' /proc/1/cmdline || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
     depends_on:
       sqlserver:

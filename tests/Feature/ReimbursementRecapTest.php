@@ -1017,8 +1017,8 @@ class ReimbursementRecapTest extends TestCase
             'status' => 'approved',
         ]);
 
-        $this->assertMatchesRegularExpression('#^\d{4}/MESI/JKT/\d{2}/\d{4}$#', (string) $memoJkt->nomor_memo);
-        $this->assertMatchesRegularExpression('#^\d{4}/MESI/BJN/\d{2}/\d{4}$#', (string) $memoBjn->nomor_memo);
+        $this->assertMatchesRegularExpression('#^\d{4}/MEMO/MESI/JKT/\d{2}/\d{4}$#', (string) $memoJkt->nomor_memo);
+        $this->assertMatchesRegularExpression('#^\d{4}/MEMO/MESI/BJN/\d{2}/\d{4}$#', (string) $memoBjn->nomor_memo);
 
         $sppdJkt = Sppd::where('employee_id', $staffJkt->id)->firstOrFail();
         $sppdBjn = Sppd::where('employee_id', $staffBjn->id)->firstOrFail();
@@ -1030,7 +1030,7 @@ class ReimbursementRecapTest extends TestCase
         (new \App\Services\Approval\ApprovalResolver())->approve($reqSppdJkt, $spvJktEmp, 'OK SPV JKT');
         (new \App\Services\Approval\ApprovalResolver())->approve($reqSppdJkt->fresh(), $mgrJktEmp, 'OK MGR JKT');
         $sppdJkt->refresh();
-        $this->assertMatchesRegularExpression('#^\d{4}/MESI/JKT/\d{2}/\d{4}$#', (string) $sppdJkt->sppd_number);
+        $this->assertMatchesRegularExpression('#^\d{4}/SPPD/MESI/JKT/\d{2}/\d{4}$#', (string) $sppdJkt->sppd_number);
 
         $jktPrintHtml = view('sppds.print', [
             'sppd' => $sppdJkt,
@@ -1047,7 +1047,7 @@ class ReimbursementRecapTest extends TestCase
         $this->assertCount(1, $reqSppdBjn->steps);
         (new \App\Services\Approval\ApprovalResolver())->approve($reqSppdBjn, $mgrBjnEmp, 'OK MGR BJN');
         $sppdBjn->refresh();
-        $this->assertMatchesRegularExpression('#^\d{4}/MESI/BJN/\d{2}/\d{4}$#', (string) $sppdBjn->sppd_number);
+        $this->assertMatchesRegularExpression('#^\d{4}/SPPD/MESI/BJN/\d{2}/\d{4}$#', (string) $sppdBjn->sppd_number);
 
         $bjnPrintHtml = view('sppds.print', [
             'sppd' => $sppdBjn,
@@ -1084,7 +1084,7 @@ class ReimbursementRecapTest extends TestCase
         // HR Jakarta sinkronisasi bulan November 2026 -> hanya menyinkronkan pegawai Jakarta
         $recapAfterJkt = OfficialTravelRecap::syncForMonth(11, 2026, $hrJktUser->id, $areaJkt->id);
         $this->assertNotNull($recapAfterJkt);
-        $this->assertMatchesRegularExpression('#^\d{4}/MESI/JKT/\d{2}/\d{4}$#', (string) $recapAfterJkt->recap_number);
+        $this->assertMatchesRegularExpression('#^\d{4}/RPD/MESI/JKT/\d{2}/\d{4}$#', (string) $recapAfterJkt->recap_number);
         $this->assertCount(1, $recapAfterJkt->items);
 
         // HR Bojonegara belum melihat rekap sebelum ada data Bojonegara di dalamnya

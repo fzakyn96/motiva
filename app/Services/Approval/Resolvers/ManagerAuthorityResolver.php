@@ -25,8 +25,8 @@ class ManagerAuthorityResolver implements AuthorityResolver
             return true;
         }
 
-        // Business Division Head (Perkasa) has a dedicated resolver on recaps and does not act as PGN Manager
-        if ($employee->isBusinessDivisionHead()) {
+        // Business Division Head (Perkasa) and Manajer Kontrak do not act as PGN Area Manager
+        if ($employee->isBusinessDivisionHead() || $employee->isContractManager()) {
             return false;
         }
 

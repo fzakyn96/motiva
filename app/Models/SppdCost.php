@@ -240,6 +240,8 @@ class SppdCost extends Model
             'status' => 'pending',
         ]);
 
+        app(\App\Services\Approval\ApprovalNotificationService::class)->notifyPendingApprovers($request);
+
         return $request;
     }
 
