@@ -34,12 +34,6 @@ class ViewSppdCostApproval extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('back')
-                ->label('Kembali')
-                ->icon('heroicon-o-arrow-left')
-                ->color('info')
-                ->url(SppdCostApprovalResource::getUrl('index')),
-
             Actions\Action::make('approve')
                 ->label('Setujui & Tandatangani')
                 ->icon('heroicon-o-check-badge')
@@ -110,6 +104,12 @@ class ViewSppdCostApproval extends ViewRecord
                 ->color('info')
                 ->url(fn (): string => route('sppd-costs.print', $this->getRecord()->document_id))
                 ->openUrlInNewTab(),
+
+            Actions\Action::make('back')
+                ->label('Kembali')
+                ->icon('heroicon-o-arrow-left')
+                ->color('gray')
+                ->url(SppdCostApprovalResource::getUrl('index')),
         ];
     }
 }

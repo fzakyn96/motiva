@@ -31,7 +31,7 @@ class CalculateSppdCost extends Page implements HasForms
             \Filament\Actions\Action::make('back')
                 ->label('Kembali')
                 ->icon('heroicon-o-arrow-left')
-                ->color('info')
+                ->color('gray')
                 ->url(SppdCostResource::getUrl('index')),
         ];
     }

@@ -70,13 +70,6 @@ class EditSppd extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            // Tombol Kembali di bagian atas formulir
-            Actions\Action::make('back')
-                ->label('Kembali')
-                ->icon('heroicon-o-arrow-left')
-                ->color('info')
-                ->url(fn () => static::getResource()::getUrl('index')),
-
             // Tombol Cetak SPPD hanya muncul jika formulir sudah disimpan dan diajukan (status bukan draft)
             Actions\Action::make('print')
                 ->label('Cetak')
@@ -90,6 +83,13 @@ class EditSppd extends EditRecord
                 ->label('Hapus')
                 ->icon('heroicon-o-trash')
                 ->visible(fn () => SppdResource::canDelete($this->getRecord())),
+
+            // Tombol Kembali di bagian paling kanan atas formulir
+            Actions\Action::make('back')
+                ->label('Kembali')
+                ->icon('heroicon-o-arrow-left')
+                ->color('gray')
+                ->url(fn () => static::getResource()::getUrl('index')),
         ];
     }
 
@@ -118,17 +118,6 @@ class EditSppd extends EditRecord
         $record = $this->getRecord();
         if ($record->status === 'pending') {
             (new \App\Observers\SppdObserver())->ensureApprovalRequestExists($record);
-
-            $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-            if ($user && (int) $record->employee?->user_id === (int) $user->id && $user->hasConfiguredSignature()) {
-                app(\App\Services\Signature\SignatureService::class)->signDocument(
-                    $record,
-                    $record->employee,
-                    'requester',
-                    'Menyetujui perhitungan biaya perjalanan dinas sesuai keputusan perusahaan',
-                    $user
-                );
-            }
         }
 
         if (

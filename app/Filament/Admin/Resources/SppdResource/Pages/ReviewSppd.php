@@ -385,7 +385,7 @@ class ReviewSppd extends ViewRecord
             Action::make('back')
                 ->label('Kembali')
                 ->icon('heroicon-o-arrow-left')
-                ->color('info')
+                ->color('gray')
                 ->url(function () {
                     $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
                     if ($user && ($user->hasRole('Division Head') || $user->employee?->isBusinessDivisionHead()) && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {

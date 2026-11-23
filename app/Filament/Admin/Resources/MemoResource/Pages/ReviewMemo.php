@@ -341,7 +341,7 @@ class ReviewMemo extends ViewRecord
             Action::make('back')
                 ->label('Kembali')
                 ->icon('heroicon-o-arrow-left')
-                ->color('info')
+                ->color('gray')
                 ->url(function () {
                     $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
                     if (request()->query('from') === 'approvals' || $user?->hasRole('Manager') || str_contains(request()->headers->get('referer', ''), 'memo-approvals')) {

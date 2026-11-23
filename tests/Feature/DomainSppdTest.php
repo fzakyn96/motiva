@@ -856,12 +856,7 @@ class DomainSppdTest extends TestCase
             ->where('role_type', 'requester')
             ->first();
 
-        $this->assertNotNull($docSignature);
-        $this->assertEquals($staffUser->id, $docSignature->user_id);
-
-        $requesterRender = app(\App\Services\Signature\SignatureService::class)
-            ->resolveRenderData($sppd, $staff, 'requester', true);
-        $this->assertTrue($requesterRender['signed'] ?? false);
+        $this->assertNull($docSignature);
 
         $managerRender = app(\App\Services\Signature\SignatureService::class)
             ->resolveRenderData($sppd, $manager, 'manager', false);
@@ -1228,31 +1223,15 @@ class DomainSppdTest extends TestCase
             'role_type' => 'manager',
         ]);
 
-        // 3. Assigned employee without signature is warned/blocked when trying to approve & sign
+        // 3. Assigned employee does not need to sign Form SPPD -> employee_approve action is hidden
         $sppd1->refresh();
         $this->actingAs($staffUser);
         Livewire::test(\App\Filament\Admin\Resources\SppdResource\Pages\ListSppds::class)
-            ->assertTableActionVisible('employee_approve', $sppd1)
-            ->callTableAction('employee_approve', $sppd1)
-            ->assertNotified('Tanda Tangan Belum Diatur');
+            ->assertTableActionHidden('employee_approve', $sppd1);
 
         $this->assertDatabaseMissing('document_signatures', [
             'document_type' => Sppd::class,
             'document_id' => $sppd1->id,
-            'role_type' => 'requester',
-        ]);
-
-        // 4. After configuring signature, assigned employee approves & signs SPPD -> signature stamped
-        $staffUser->update(['signature_type' => 'draw', 'signature_data' => $dummyPng]);
-        Livewire::test(\App\Filament\Admin\Resources\SppdResource\Pages\ListSppds::class)
-            ->callTableAction('employee_approve', $sppd1)
-            ->assertNotified('SPPD Disetujui & Ditandatangani')
-            ->assertTableActionHidden('employee_approve', $sppd1);
-
-        $this->assertDatabaseHas('document_signatures', [
-            'document_type' => Sppd::class,
-            'document_id' => $sppd1->id,
-            'user_id' => $staffUser->id,
             'role_type' => 'requester',
         ]);
 

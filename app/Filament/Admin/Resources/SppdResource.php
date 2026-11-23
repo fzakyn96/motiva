@@ -1025,16 +1025,9 @@ class SppdResource extends Resource
 
     public static function canEmployeeSign(Sppd $sppd): bool
     {
-        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
-        if (! $user || $sppd->status !== 'approved') {
-            return false;
-        }
-
-        if ((int) $sppd->employee?->user_id !== (int) $user->id) {
-            return false;
-        }
-
-        return ! static::hasEmployeeSigned($sppd);
+        // Pada Formulir Perintah Perjalanan Dinas (SPPD), pegawai yang ditugaskan tidak perlu menandatangani dokumen.
+        // Cukup Manajer dan SPV (jika ada).
+        return false;
     }
 
     public static function performEmployeeSignature(Sppd $sppd): bool

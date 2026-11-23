@@ -287,42 +287,34 @@
                                 ->exists();
                         $supervisorSignatureRender = $sigService->resolveRenderData($sppd, $supervisor, 'supervisor', $hasSpvSigned);
                     }
-                    $hasEmployeeSigned = \App\Models\DocumentSignature::where('document_type', \App\Models\Sppd::class)
-                        ->where('document_id', $sppd->id)
-                        ->where('role_type', 'requester')
-                        ->exists();
-                    $employeeSignatureRender = $employeeSignatureRender ?? $sigService->resolveRenderData(
-                        $sppd,
-                        $sppd->employee,
-                        'requester',
-                        $hasEmployeeSigned
-                    );
                 @endphp
                 <table style="width: 100%; border-collapse: collapse; border: none;">
                     <tr>
-                        <td style="border: none; width: {{ $supervisor ? '33.33%' : '50%' }}; text-align: center; vertical-align: top;">
-                            <div style="font-weight: bold; font-size: 11px;">Pejabat yang memberi perintah,</div>
-                            @include('signatures.pdf-stamp', ['render' => $signatureRender, 'align' => 'center', 'emptyHeight' => '48px'])
-                            <div style="margin-top: 6px;">
-                                ( <span style="display: inline-block; min-width: 135px; text-decoration: underline; font-weight: bold;">{{ $signerName }}</span> )
-                            </div>
-                        </td>
                         @if($supervisor)
-                            <td style="border: none; width: 33.33%; text-align: center; vertical-align: top;">
+                            <td style="border: none; width: 50%; text-align: center; vertical-align: top;">
+                                <div style="font-weight: bold; font-size: 11px;">Pejabat yang memberi perintah,</div>
+                                @include('signatures.pdf-stamp', ['render' => $signatureRender, 'align' => 'center', 'emptyHeight' => '48px'])
+                                <div style="margin-top: 6px;">
+                                    ( <span style="display: inline-block; min-width: 135px; text-decoration: underline; font-weight: bold;">{{ $signerName }}</span> )
+                                </div>
+                            </td>
+                            <td style="border: none; width: 50%; text-align: center; vertical-align: top;">
                                 <div style="font-weight: bold; font-size: 11px;">Mengetahui,</div>
                                 @include('signatures.pdf-stamp', ['render' => $supervisorSignatureRender ?? ['signed' => false], 'align' => 'center', 'emptyHeight' => '48px'])
                                 <div style="margin-top: 6px;">
                                     ( <span style="display: inline-block; min-width: 135px; text-decoration: underline; font-weight: bold;">{{ $supervisorName }}</span> )
                                 </div>
                             </td>
+                        @else
+                            <td style="border: none; width: 50%;"></td>
+                            <td style="border: none; width: 50%; text-align: center; vertical-align: top;">
+                                <div style="font-weight: bold; font-size: 11px;">Pejabat yang memberi perintah,</div>
+                                @include('signatures.pdf-stamp', ['render' => $signatureRender, 'align' => 'center', 'emptyHeight' => '48px'])
+                                <div style="margin-top: 6px;">
+                                    ( <span style="display: inline-block; min-width: 135px; text-decoration: underline; font-weight: bold;">{{ $signerName }}</span> )
+                                </div>
+                            </td>
                         @endif
-                        <td style="border: none; width: {{ $supervisor ? '33.33%' : '50%' }}; text-align: center; vertical-align: top;">
-                            <div style="font-weight: bold; font-size: 11px;">Pegawai yang diperintah,</div>
-                            @include('signatures.pdf-stamp', ['render' => $employeeSignatureRender, 'align' => 'center', 'emptyHeight' => '48px'])
-                            <div style="margin-top: 6px;">
-                                ( <span style="display: inline-block; min-width: 135px; text-decoration: underline; font-weight: bold;">{{ $sppd->employee?->name ?? '____________________' }}</span> )
-                            </div>
-                        </td>
                     </tr>
                 </table>
             </td>

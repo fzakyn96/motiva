@@ -178,12 +178,6 @@ class RecapTableSupport
     public static function viewHeaderActions(Model $record, string $indexUrl, string $printRouteName): array
     {
         return [
-            Actions\Action::make('back')
-                ->label('Kembali')
-                ->icon('heroicon-o-arrow-left')
-                ->color('info')
-                ->url($indexUrl),
-
             Actions\Action::make('approve_recap')
                 ->label(function () use ($record): string {
                     $req = static::latestApproval($record);
@@ -289,6 +283,12 @@ class RecapTableSupport
                 ->color('info')
                 ->url(fn () => route($printRouteName, $record))
                 ->openUrlInNewTab(),
+
+            Actions\Action::make('back')
+                ->label('Kembali')
+                ->icon('heroicon-o-arrow-left')
+                ->color('gray')
+                ->url($indexUrl),
         ];
     }
 
