@@ -122,9 +122,15 @@ class ApprovalEmailNotificationTest extends TestCase
         Notification::assertSentTo(
             $managerUser,
             ApprovalStatusNotification::class,
-            fn (ApprovalStatusNotification $n) => $n->event === 'submitted'
-                && $n->documentTypeLabel === 'Memo'
-                && $n->requesterName === 'Pemohon'
+            function (ApprovalStatusNotification $n) use ($managerUser, $memo): bool {
+                $mail = $n->toMail($managerUser);
+
+                return $n->event === 'submitted'
+                    && $n->documentTypeLabel === 'Memo'
+                    && $n->requesterName === 'Pemohon'
+                    && $mail->subject === '[MOTIVA] Permohonan Persetujuan Memo - Memo Kunjungan Site'
+                    && $n->actionUrl === \App\Filament\Admin\Resources\MemoResource::getUrl('review', ['record' => $memo, 'from' => 'approvals'], panel: 'admin');
+            }
         );
         Notification::assertNotSentTo($bdhUser, ApprovalStatusNotification::class);
         Notification::assertNotSentTo($contractMgrUser, ApprovalStatusNotification::class);
@@ -139,9 +145,17 @@ class ApprovalEmailNotificationTest extends TestCase
         Notification::assertSentTo(
             $requesterUser,
             ApprovalStatusNotification::class,
-            fn (ApprovalStatusNotification $n) => $n->event === 'approved'
-                && $n->documentTypeLabel === 'Memo'
-                && $n->notes === 'Disetujui sesuai jadwal'
+            function (ApprovalStatusNotification $n) use ($requesterUser, $memo): bool {
+                $mail = $n->toMail($requesterUser);
+                $intro = implode("\n", $mail->introLines);
+
+                return $n->event === 'approved'
+                    && $n->documentTypeLabel === 'Memo'
+                    && $n->notes === 'Disetujui sesuai jadwal'
+                    && $mail->subject === '[MOTIVA] Pemberitahuan Persetujuan Memo - Memo Kunjungan Site'
+                    && $mail->actionUrl === route('memos.print', $memo)
+                    && str_contains($intro, 'Dengan hormat, kami informasikan bahwa pengajuan Memo untuk agenda **Memo Kunjungan Site** telah **DISETUJUI**.');
+            }
         );
         // Pegawai yang ditugaskan belum mendapat email saat Memo disetujui (menunggu persetujuan Biaya SPPD)
         Notification::assertNotSentTo($assignedUser, ApprovalStatusNotification::class);
@@ -420,8 +434,20 @@ class ApprovalEmailNotificationTest extends TestCase
             'department_id' => $dept->id,
             'work_area_id' => $area->id,
             'position_id' => $spvPos->id,
-            'name' => 'SPV Jakarta',
+            'name' => 'Ikhsan Supervisor',
             'identity_number' => 'EMP-SPV',
+        ]);
+
+        $otherSpvUser = User::factory()->create(['email' => 'didiet.jkt@motiva.test']);
+        $otherSpvUser->assignRole('Supervisor');
+        Employee::create([
+            'user_id' => $otherSpvUser->id,
+            'organization_id' => $org->id,
+            'department_id' => $dept->id,
+            'work_area_id' => $area->id,
+            'position_id' => $spvPos->id,
+            'name' => 'Didiet Supervisor Lain',
+            'identity_number' => 'EMP-SPV-2',
         ]);
 
         $mgrUser = User::factory()->create(['email' => 'mgr.jkt@motiva.test']);
@@ -468,6 +494,7 @@ class ApprovalEmailNotificationTest extends TestCase
             'department_id' => $dept->id,
             'work_area_id' => $area->id,
             'position_id' => $staffPos->id,
+            'manager_id' => $spv->id,
             'name' => 'Staff Jakarta',
             'identity_number' => 'EMP-STF-JKT',
         ]);
@@ -501,9 +528,21 @@ class ApprovalEmailNotificationTest extends TestCase
         $this->assertSame(\App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class, $reqSppd->currentStep()->policyStep->resolver_class);
         $this->assertFalse((new ApprovalResolver())->canApprove($reqSppd, $mgr));
 
-        // Step 1: SPV receives SPPD email first (Manager has NOT received SPPD email yet)
+        // Step 1: ONLY direct SPV (Ikhsan) receives SPPD email; other SPV in same area (Didiet) must NOT receive it
         Notification::assertSentTo($spvUser, ApprovalStatusNotification::class, fn ($n) => $n->event === 'submitted' && $n->documentTypeLabel === 'SPPD');
+        Notification::assertNotSentTo($otherSpvUser, ApprovalStatusNotification::class, fn ($n) => $n->documentTypeLabel === 'SPPD');
         Notification::assertNotSentTo($mgrUser, ApprovalStatusNotification::class, fn ($n) => $n->documentTypeLabel === 'SPPD');
+
+        // Creating a second SPPD in the same Memo for the same direct SPV must keep only 1 email per Memo
+        Sppd::create([
+            'business_trip_id' => $trip->id,
+            'employee_id' => $staff->id,
+            'destination_location' => 'Jakarta',
+            'departure_date' => '2026-11-25',
+            'return_date' => '2026-11-26',
+            'status' => 'pending',
+        ]);
+        Notification::assertSentToTimes($spvUser, ApprovalStatusNotification::class, 1);
         Notification::assertNotSentTo($bdhUser, ApprovalStatusNotification::class);
 
         (new ApprovalResolver())->approve($reqSppd, $spv, 'OK SPV');

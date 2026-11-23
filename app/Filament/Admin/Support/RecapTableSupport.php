@@ -72,7 +72,7 @@ class RecapTableSupport
             Tables\Actions\Action::make('submit_recap')
                 ->label('Ajukan')
                 ->icon('heroicon-o-paper-airplane')
-                ->color('primary')
+                ->color('success')
                 ->button()
                 ->size('sm')
                 ->requiresConfirmation()
@@ -125,14 +125,14 @@ class RecapTableSupport
                     return 'Lihat';
                 })
                 ->icon('heroicon-o-eye')
-                ->color(function (Model $record): string {
+                ->color(function (Model $record): string | array {
                     $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
                     $employee = $user?->employee;
                     $req = static::latestApproval($record);
 
                     return ($employee && $req && $req->status === 'pending' && (new ApprovalResolver())->canApprove($req, $employee))
                         ? 'warning'
-                        : 'primary';
+                        : \Filament\Support\Colors\Color::Indigo;
                 })
                 ->button()
                 ->size('sm'),
@@ -426,7 +426,7 @@ class RecapTableSupport
                             })->implode('')
                             . '</div>';
                     })
-                    ->extraAttributes(['style' => 'width: 100%;'])
+                    ->extraAttributes(['class' => 'motiva-full-width-entry'])
                     ->extraEntryWrapperAttributes(['style' => 'width: 100%;'])
                     ->columnSpanFull(),
             ]);

@@ -136,15 +136,22 @@ class EditSppd extends EditRecord
             && \App\Models\SppdSetting::current()->isHrFiller()
             && (\Filament\Facades\Filament::auth()->user() ?? auth()->user())?->hasAnyRole(['HR', 'Admin', 'Superadmin'])
         ) {
-            $applied = SppdResource::applyFormToSiblings($record, $this->selectedSiblingSppdIds);
-            if ($applied > 0) {
-                \Filament\Notifications\Notification::make()
-                    ->title('SPPD Pegawai Lain Ikut Diajukan')
-                    ->body("Isian form SPPD berhasil diterapkan ke {$applied} pegawai lain pada Memo yang sama.")
-                    ->success()
-                    ->send();
-            }
+            $this->appliedSiblingCount = SppdResource::applyFormToSiblings($record, $this->selectedSiblingSppdIds);
         }
+    }
+
+    protected int $appliedSiblingCount = 0;
+
+    protected function getSavedNotification(): ?\Filament\Notifications\Notification
+    {
+        if ($this->appliedSiblingCount > 0) {
+            return \Filament\Notifications\Notification::make()
+                ->title('SPPD Berhasil Disimpan & Diajukan')
+                ->body("Isian form SPPD berhasil diterapkan ke {$this->appliedSiblingCount} pegawai lain pada Memo yang sama.")
+                ->success();
+        }
+
+        return parent::getSavedNotification();
     }
 
     protected function getFormActions(): array

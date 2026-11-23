@@ -128,9 +128,16 @@ class AdminPanelProvider extends PanelProvider
                         transition: box-shadow 0.15s ease, transform 0.15s ease;
                     }
 
-                    /* Ensure HTML infolist text entries expand full width for multi-card grids */
-                    .fi-in-text, .fi-in-text-item {
-                        width: 100%;
+                    /* Ensure custom HTML infolist entries expand full width for multi-card grids */
+                    .motiva-full-width-entry,
+                    .motiva-full-width-entry > div,
+                    .motiva-full-width-entry > div > div,
+                    .motiva-full-width-entry .fi-in-text-item,
+                    .motiva-full-width-entry .fi-in-text-item > div,
+                    .motiva-full-width-entry .prose {
+                        display: block !important;
+                        width: 100% !important;
+                        max-width: none !important;
                     }
 
                     @media (max-width: 639px) {

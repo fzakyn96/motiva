@@ -124,7 +124,7 @@
             <div class="header header-valid">
                 <span class="badge badge-valid">✓ Tanda Tangan Elektronik Terverifikasi</span>
                 <h1 class="title">Dokumen Resmi & Sah</h1>
-                <p class="subtitle">Sistem Informasi MOTIVA — PT Permata Karya Jasa</p>
+                <p class="subtitle">MOTIVA Digital Signature Verification Service</p>
             </div>
 
             <div class="body">
@@ -208,7 +208,7 @@
         @endif
 
         <div class="footer">
-            MOTIVA Digital Signature Verification Service • PT Permata Karya Jasa
+            MOTIVA Digital Signature Verification Service
         </div>
     </div>
 </body>

@@ -482,9 +482,8 @@ class OfficialTravelRecapResource extends Resource
                                     ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 0, ',', '.') : '-')
                                     ->weight('bold')
                                     ->color('success'),
-                                Infolists\Components\TextEntry::make('cost_breakdown')
-                                    ->label('Rincian Komponen Biaya SPPD')
-                                    ->state(fn (OfficialTravelRecapItem $record): HtmlString => static::formatCostBreakdownHtml($record))
+                                Infolists\Components\ViewEntry::make('cost_breakdown')
+                                    ->view('filament.infolists.official-travel-cost-breakdown')
                                     ->columnSpanFull(),
                             ]),
                     ]),

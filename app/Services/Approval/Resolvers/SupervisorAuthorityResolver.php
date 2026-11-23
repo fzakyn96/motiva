@@ -30,25 +30,47 @@ class SupervisorAuthorityResolver implements AuthorityResolver
             return false;
         }
 
-        // 2. Direct supervisor / manager of the requester
+        // 2. If requester has a direct Supervisor assigned as manager_id, ONLY that direct supervisor has authority
+        $directManager = $requester->manager;
+        if ($directManager && $this->isSupervisorEmployee($directManager)) {
+            return (int) $directManager->id === (int) $employee->id;
+        }
+
+        // Direct supervisor / manager of the requester
         if ($requester->manager_id && (int) $requester->manager_id === (int) $employee->id) {
             return true;
         }
 
-        // 3. Supervisor in the same department (Position level 2 or name/code Supervisor)
+        // 3. Fallback: Supervisor in the same department (Position level 2 or name/code Supervisor)
         if ($requester->department_id && (int) $employee->department_id === (int) $requester->department_id) {
-            if ($employee->position && ((int) $employee->position->level === 2 || str_contains(strtoupper($employee->position->name), 'SUPERVISOR') || strtoupper($employee->position->code) === 'SPV')) {
-                return true;
-            }
-
-            if ($employee->user && $employee->user->hasRole('Supervisor')) {
+            if ($this->isSupervisorEmployee($employee)) {
                 return true;
             }
         }
 
-        // 4. User role Supervisor in general
+        // 4. Fallback: User role Supervisor in the same work area
         if ($employee->user && $employee->user->hasRole('Supervisor')) {
             return true;
+        }
+
+        return false;
+    }
+
+    protected function isSupervisorEmployee(Employee $employee): bool
+    {
+        $employee->loadMissing(['position', 'user.roles']);
+
+        if ($employee->user && $employee->user->hasRole('Supervisor')) {
+            return true;
+        }
+
+        if ($employee->position) {
+            $code = strtoupper((string) $employee->position->code);
+            $name = strtoupper((string) $employee->position->name);
+
+            if ((int) $employee->position->level === 2 || $code === 'SPV' || str_contains($name, 'SUPERVISOR')) {
+                return true;
+            }
         }
 
         return false;

@@ -44,16 +44,23 @@ class ApprovalStatusNotification extends Notification implements ShouldQueue
     public function toMail(object $notifiable): MailMessage
     {
         $recipientName = $notifiable->name ?? 'Rekan Kerja';
-        $titleSuffix = filled($this->documentTitle) ? " - {$this->documentTitle}" : '';
+        $agendaName = $this->details['Agenda'] ?? null;
+        $titleSuffix = ($this->documentTypeLabel === 'Memo' && filled($agendaName))
+            ? " - {$agendaName}"
+            : (filled($this->documentTitle) ? " - {$this->documentTitle}" : '');
         $docPhrase = filled($this->documentTitle)
             ? "{$this->documentTypeLabel} **{$this->documentTitle}**"
             : $this->documentTypeLabel;
 
         if ($this->event === 'approved') {
+            $approvedIntro = ($this->documentTypeLabel === 'Memo' && filled($agendaName))
+                ? "Dengan hormat, kami informasikan bahwa pengajuan Memo untuk agenda **{$agendaName}** telah **DISETUJUI**."
+                : "Dengan hormat, kami informasikan bahwa pengajuan {$docPhrase} telah **DISETUJUI**.";
+
             $mail = (new MailMessage)
                 ->subject("[MOTIVA] Pemberitahuan Persetujuan {$this->documentTypeLabel}{$titleSuffix}")
                 ->greeting("Yth. {$recipientName},")
-                ->line("Dengan hormat, kami informasikan bahwa pengajuan {$docPhrase} telah **DISETUJUI**.");
+                ->line($approvedIntro);
 
             $this->appendDetails($mail);
 

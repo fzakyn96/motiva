@@ -654,8 +654,7 @@ class SppdResource extends Resource
                             ->icon('heroicon-m-map-pin')
                             ->weight('bold'),
                         Infolists\Components\TextEntry::make('assignment_purpose')
-                            ->label('Deskripsi Tujuan Penugasan')
-                            ->columnSpanFull(),
+                            ->label('Deskripsi Tujuan Penugasan'),
                     ])
                     ->columns(['default' => 1, 'sm' => 2]),
 
@@ -706,8 +705,7 @@ class SppdResource extends Resource
                             ->placeholder('-'),
                         Infolists\Components\TextEntry::make('destination_transportation')
                             ->label('Transportasi di Tempat Tujuan')
-                            ->formatStateUsing(fn ($state) => is_array($state) ? implode(', ', $state) : ($state ?: '-'))
-                            ->columnSpanFull(),
+                            ->formatStateUsing(fn ($state) => is_array($state) ? implode(', ', $state) : ($state ?: '-')),
                     ])
                     ->columns(['default' => 1, 'sm' => 3]),
             ]);

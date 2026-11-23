@@ -3,6 +3,7 @@
 namespace App\Services\Approval;
 
 use App\Filament\Admin\Resources\MemoApprovalResource;
+use App\Filament\Admin\Resources\MemoResource;
 use App\Filament\Admin\Resources\OfficialTravelApprovalResource;
 use App\Filament\Admin\Resources\SppdApprovalResource;
 use App\Filament\Admin\Resources\SppdCostApprovalResource;
@@ -18,6 +19,7 @@ use App\Models\TransportAccommodationRecap;
 use App\Models\User;
 use App\Notifications\ApprovalStatusNotification;
 use App\Services\Approval\Resolvers\BusinessDivisionHeadAuthorityResolver;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class ApprovalNotificationService
@@ -40,7 +42,7 @@ class ApprovalNotificationService
                 return;
             }
 
-            [$typeLabel, $title, $actionUrl, $details] = $this->resolveDocumentSummary($request);
+            [$typeLabel, $title, $actionUrl, $details] = $this->resolveDocumentSummary($request, 'submitted');
             $requesterName = $request->requester?->name ?? 'Pemohon';
             $resolver = new ApprovalResolver();
 
@@ -69,6 +71,15 @@ class ApprovalNotificationService
                     continue;
                 }
 
+                // Ringkas menjadi 1 email per Memo untuk SPPD & Biaya SPPD pada business_trip_id yang sama
+                $tripId = $this->resolveBusinessTripId($request);
+                if ($tripId !== null) {
+                    $dedupKey = "notif:memo-group:{$request->document_type}:trip:{$tripId}:user:{$user->id}:submitted";
+                    if (! Cache::add($dedupKey, true, now()->addSeconds(15))) {
+                        continue;
+                    }
+                }
+
                 $notifiedUserIds[] = $user->id;
                 $user->notify(new ApprovalStatusNotification(
                     event: 'submitted',
@@ -93,7 +104,7 @@ class ApprovalNotificationService
     public function notifyRequesterResult(ApprovalRequest $request, string $event, ?string $notes = null): void
     {
         try {
-            [$typeLabel, $title, $actionUrl, $details] = $this->resolveDocumentSummary($request);
+            [$typeLabel, $title, $actionUrl, $details] = $this->resolveDocumentSummary($request, $event);
             $requesterEmployee = $request->requester;
             $requesterName = $requesterEmployee?->name ?? 'Pemohon';
             $notifiedUserIds = [];
@@ -175,18 +186,21 @@ class ApprovalNotificationService
     /**
      * @return array{0: string, 1: string, 2: ?string, 3: array<string, string>}
      */
-    protected function resolveDocumentSummary(ApprovalRequest $request): array
+    protected function resolveDocumentSummary(ApprovalRequest $request, string $event = 'submitted'): array
     {
         $doc = $request->document;
         $baseUrl = rtrim((string) config('app.url'), '/');
 
         if ($doc instanceof Memo) {
             $participantCount = is_array($doc->participants) ? count($doc->participants) : 0;
+            $memoUrl = $event === 'approved'
+                ? $this->safeResourceUrl(fn () => route('memos.print', $doc), $baseUrl)
+                : $this->safeResourceUrl(fn () => MemoResource::getUrl('review', ['record' => $doc, 'from' => 'approvals'], panel: 'admin'), $baseUrl);
 
             return [
                 'Memo',
                 (string) ($doc->nomor_memo ?? ''),
-                $this->safeResourceUrl(fn () => MemoApprovalResource::getUrl('index'), $baseUrl),
+                $memoUrl,
                 array_filter([
                     'Agenda' => $doc->agenda ?: $doc->title,
                     'Tanggal Memo' => $doc->date?->format('d/m/Y'),
@@ -232,16 +246,36 @@ class ApprovalNotificationService
                 ? $sppd->departure_date->format('d/m/Y') . ' s.d. ' . $sppd->return_date->format('d/m/Y')
                 : null;
 
+            $costGroup = ($sppd?->business_trip_id && $event === 'submitted')
+                ? SppdCost::with('sppd.employee')
+                    ->whereHas('sppd', fn ($q) => $q->where('business_trip_id', $sppd->business_trip_id))
+                    ->get()
+                : collect([$doc]);
+
+            $employeeSummaries = $costGroup->map(function (SppdCost $c): ?string {
+                $empName = $c->sppd?->employee?->name;
+                if (! $empName) {
+                    return null;
+                }
+
+                return $empName . ' (Rp ' . number_format((float) ($c->grand_total ?: $c->total_cost), 0, ',', '.') . ')';
+            })->filter()->values();
+
+            $totalCombined = $costGroup->sum(fn (SppdCost $c): float => (float) ($c->grand_total ?: $c->total_cost));
+
             return [
                 'Biaya SPPD',
                 (string) ($sppd?->sppd_number ?? ''),
-                $this->safeResourceUrl(fn () => SppdCostApprovalResource::getUrl('index'), $baseUrl),
+                $this->safeResourceUrl(fn () => SppdCostApprovalResource::getUrl('index', panel: 'admin'), $baseUrl),
                 array_filter([
                     'Agenda' => $agenda,
-                    'Pegawai' => $sppd?->employee?->name,
+                    'Jumlah Pegawai' => $employeeSummaries->count() > 1 ? $employeeSummaries->count() . ' orang' : null,
+                    'Pegawai' => $employeeSummaries->count() > 1
+                        ? $employeeSummaries->implode(', ')
+                        : $sppd?->employee?->name,
                     'Tujuan Perjalanan' => $sppd?->destination_location,
                     'Jadwal Perjalanan' => $dateRange,
-                    'Total Biaya' => 'Rp ' . number_format((float) $doc->grand_total, 0, ',', '.'),
+                    'Total Biaya' => 'Rp ' . number_format($totalCombined, 0, ',', '.'),
                 ]),
             ];
         }
@@ -285,6 +319,23 @@ class ApprovalNotificationService
             $baseUrl ?: null,
             [],
         ];
+    }
+
+    protected function resolveBusinessTripId(ApprovalRequest $request): ?int
+    {
+        $doc = $request->document;
+
+        if ($doc instanceof Sppd) {
+            return $doc->business_trip_id ? (int) $doc->business_trip_id : null;
+        }
+
+        if ($doc instanceof SppdCost) {
+            $doc->loadMissing('sppd');
+
+            return $doc->sppd?->business_trip_id ? (int) $doc->sppd->business_trip_id : null;
+        }
+
+        return null;
     }
 
     protected function safeResourceUrl(callable $resolver, string $fallback): ?string

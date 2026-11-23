@@ -98,6 +98,78 @@ class SppdApprovalResource extends Resource
         return $record->currentStep()?->policyStep?->resolver_class === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class;
     }
 
+    /**
+     * Return 1 representative ApprovalRequest ID per Memo (business_trip_id) within the given query.
+     *
+     * @return array<int, int>
+     */
+    public static function groupIdsByMemo(Builder $query): array
+    {
+        $items = (clone $query)
+            ->with(['document'])
+            ->reorder('id', 'desc')
+            ->get(['id', 'document_type', 'document_id']);
+
+        $seen = [];
+        $ids = [];
+
+        foreach ($items as $item) {
+            $tripId = $item->document?->business_trip_id;
+            $key = $tripId ? "trip:{$tripId}" : "single:{$item->id}";
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $ids[] = $item->id;
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Get all sibling SPPD ApprovalRequests under the same Memo/BusinessTrip visible to the current user.
+     *
+     * @return \Illuminate\Support\Collection<int, ApprovalRequest>
+     */
+    public static function siblingRequests(ApprovalRequest $record, ?string $statusFilter = null): \Illuminate\Support\Collection
+    {
+        $tripId = $record->document?->business_trip_id;
+        $query = static::getEloquentQuery()
+            ->with(['document.employee.position', 'document.cost', 'document.businessTrip.memo', 'steps.policyStep']);
+
+        if ($statusFilter) {
+            $query->where('status', $statusFilter);
+        }
+
+        if ($tripId) {
+            $query->whereHasMorph('document', [Sppd::class], fn (Builder $q) => $q->where('business_trip_id', $tripId));
+        } else {
+            $query->whereKey($record->id);
+        }
+
+        $items = $query->reorder('id', 'asc')->get();
+
+        return $items->isNotEmpty() ? $items : collect([$record]);
+    }
+
+    /**
+     * Resolve the first sibling ApprovalRequest in the same Memo that the given user can act on.
+     */
+    public static function resolveActionableRequestForUser(ApprovalRequest $record, ?\App\Models\User $user = null): ?ApprovalRequest
+    {
+        if (static::canUserActOnApproval($record, $user)) {
+            return $record;
+        }
+
+        foreach (static::siblingRequests($record, 'pending') as $sibling) {
+            if ((int) $sibling->id !== (int) $record->id && static::canUserActOnApproval($sibling, $user)) {
+                return $sibling;
+            }
+        }
+
+        return null;
+    }
+
     public static function getNavigationBadge(): ?string
     {
         $pendingCount = static::applyActionablePendingScope(static::getEloquentQuery())->count();
@@ -170,6 +242,26 @@ class SppdApprovalResource extends Resource
         $employee = $user->employee;
         if (! $employee) {
             return $query;
+        }
+
+        if (static::isSupervisorOnly($user)) {
+            return $query->whereHasMorph('document', [Sppd::class], function (Builder $sppdQuery) use ($employee) {
+                $sppdQuery->whereHas('employee', function (Builder $empQuery) use ($employee) {
+                    if ($employee->work_area_id) {
+                        $empQuery->where('work_area_id', $employee->work_area_id);
+                    }
+
+                    $empQuery->where(function (Builder $sub) use ($employee) {
+                        $sub->where('manager_id', $employee->id)
+                            ->orWhere(function (Builder $fallback) {
+                                $fallback->whereDoesntHave('manager', function (Builder $mq) {
+                                    $mq->whereHas('user.roles', fn (Builder $rq) => $rq->where('name', 'Supervisor'))
+                                        ->orWhereHas('position', fn (Builder $pq) => $pq->where('level', 2)->orWhere('code', 'SPV')->orWhere('name', 'like', '%SUPERVISOR%'));
+                                });
+                            });
+                    });
+                });
+            });
         }
 
         if ($employee->work_area_id) {
@@ -245,14 +337,14 @@ class SppdApprovalResource extends Resource
                             if ($step && $step->policyStep?->resolver_class === \App\Services\Approval\Resolvers\ManagerAuthorityResolver::class) {
                                 $hasSpv = $record->steps->contains(fn ($s) => $s->policyStep?->resolver_class === \App\Services\Approval\Resolvers\SupervisorAuthorityResolver::class);
 
-                                return $hasSpv ? 'Step 2: Menunggu Manajer (SPV Disetujui)' : 'Menunggu Manajer';
+                                return $hasSpv ? 'Step 2: Menunggu Manajer' : 'Menunggu Manajer';
                             }
                             return 'Menunggu Persetujuan';
                         })
                         ->color(fn (string $state): string => match ($state) {
                             'Disetujui Sepenuhnya' => 'success',
                             'Ditolak' => 'danger',
-                            'Step 2: Menunggu Manajer (SPV Disetujui)' => 'info',
+                            'Step 2: Menunggu Manajer' => 'info',
                             'Step 1: Menunggu SPV', 'Menunggu Manajer' => 'warning',
                             default => 'warning',
                         }),
