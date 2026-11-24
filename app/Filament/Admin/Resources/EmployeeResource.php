@@ -120,6 +120,30 @@ class EmployeeResource extends Resource
                                     ->preload(),
                             ])
                             ->columns(['default' => 1, 'md' => 2]),
+
+                        Forms\Components\Fieldset::make('Komponen Upah & Pola Kerja Lembur')
+                            ->schema([
+                                Forms\Components\TextInput::make('base_salary')
+                                    ->label('Upah Dasar (UD)')
+                                    ->numeric()
+                                    ->prefix('Rp')
+                                    ->default(0)
+                                    ->helperText('Basis perhitungan tarif lembur: MAX(75% × (UD + TP) / 173, UD / 173).'),
+                                Forms\Components\TextInput::make('position_allowance')
+                                    ->label('Tunjangan Posisi / Tetap (TP)')
+                                    ->numeric()
+                                    ->prefix('Rp')
+                                    ->default(0),
+                                Forms\Components\Select::make('overtime_work_mode')
+                                    ->label('Pola Kerja Default Lembur')
+                                    ->options([
+                                        'non_shift' => 'Non-Shift (Sabtu/Minggu & Libur Nasional = L)',
+                                        'shift' => 'Shift (Hari Kerja Normal = N, Libur Nasional / Hari Off Shift = L)',
+                                    ])
+                                    ->default('non_shift')
+                                    ->required(),
+                            ])
+                            ->columns(['default' => 1, 'md' => 3]),
                     ]),
             ]);
     }

@@ -156,6 +156,9 @@ class OvertimeOrderResource extends Resource
                                 if ($emp?->workArea?->name) {
                                     $set('location_city', $emp->workArea->name);
                                 }
+                                if ($emp?->overtime_work_mode) {
+                                    $set('work_mode', $emp->overtime_work_mode);
+                                }
                             }),
                         Forms\Components\TextInput::make('satuan_kerja')
                             ->label('Satuan Kerja')
@@ -178,6 +181,7 @@ class OvertimeOrderResource extends Resource
                             ->default(now())
                             ->native(false)
                             ->displayFormat('d F Y')
+                            ->live()
                             ->required(),
                         Forms\Components\Radio::make('overtime_type')
                             ->label('Jenis Kerja Lembur')
@@ -188,10 +192,60 @@ class OvertimeOrderResource extends Resource
                             ->default('Biasa')
                             ->inline()
                             ->required(),
+                        Forms\Components\Select::make('work_mode')
+                            ->label('Status Shift / Non-Shift')
+                            ->options([
+                                'non_shift' => 'Non-Shift',
+                                'shift' => 'Shift',
+                            ])
+                            ->default('non_shift')
+                            ->live()
+                            ->required(),
+                        Forms\Components\Toggle::make('is_shift_day_off')
+                            ->label('Hari Libur Jadwal Shift (L)')
+                            ->helperText('Centang jika pegawai Shift lembur pada hari libur jadwal shift-nya.')
+                            ->visible(fn (Forms\Get $get): bool => $get('work_mode') === 'shift')
+                            ->live()
+                            ->default(false),
+                        Forms\Components\Placeholder::make('day_type_preview')
+                            ->label('Klasifikasi Hari Otomatis')
+                            ->content(function (Forms\Get $get): string {
+                                $date = $get('overtime_date');
+                                if (! $date) {
+                                    return '-';
+                                }
+                                $workMode = $get('work_mode') ?: 'non_shift';
+                                $isDayOff = (bool) $get('is_shift_day_off');
+                                $dayType = app(\App\Services\Overtime\OvertimeCalculatorService::class)->resolveDayType($date, $workMode, $isDayOff);
+                                $carbon = \Carbon\Carbon::parse($date);
+
+                                if ($dayType === 'L') {
+                                    if (\App\Models\NationalHoliday::isHoliday($carbon)) {
+                                        return 'L — Hari Libur Nasional / Cuti Bersama (Tarif 2×/3×/4×)';
+                                    }
+                                    if ($workMode === 'non_shift' && $carbon->isWeekend()) {
+                                        return 'L — Akhir Pekan Sabtu/Minggu, 5 Hari Kerja (Tarif 2×/3×/4×)';
+                                    }
+
+                                    return 'L — Hari Libur Jadwal Shift (Tarif 2×/3×/4×)';
+                                }
+
+                                return 'N — Hari Kerja Normal (Tarif 1,5× jam ke-1, 2× jam berikutnya)';
+                            }),
+                        Forms\Components\TextInput::make('planned_hours')
+                            ->label('Estimasi Durasi Lembur (Jam)')
+                            ->numeric()
+                            ->suffix('Jam')
+                            ->helperText('Digunakan untuk validasi awal batas PP 35/2021 (maks 4 jam/hari kerja, 18 jam/minggu).'),
                         Forms\Components\Textarea::make('work_description')
                             ->label('Uraian Kerja Lembur')
                             ->rows(3)
                             ->required()
+                            ->columnSpanFull(),
+                        Forms\Components\Textarea::make('compliance_override_reason')
+                            ->label('Catatan Khusus (Jika Melebihi Batas Jam Lembur)')
+                            ->placeholder('Isi alasan operasional/darurat jika estimasi lembur melebihi batas harian/mingguan.')
+                            ->rows(2)
                             ->columnSpanFull(),
                     ])
                     ->columns(['default' => 1, 'sm' => 2]),
@@ -297,6 +351,58 @@ class OvertimeOrderResource extends Resource
                             ->columnSpanFull(),
                     ])
                     ->columns(['default' => 1, 'sm' => 3]),
+
+                Infolists\Components\Section::make('Perhitungan Upah Lembur & Kepatuhan (PP 35/2021)')
+                    ->icon('heroicon-o-calculator')
+                    ->iconColor('info')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('work_mode')
+                            ->label('Pola Kerja')
+                            ->badge()
+                            ->formatStateUsing(fn (?string $state): string => $state === 'shift' ? 'Shift' : 'Non-Shift'),
+                        Infolists\Components\TextEntry::make('day_type')
+                            ->label('Klasifikasi Hari')
+                            ->badge()
+                            ->formatStateUsing(fn (?string $state): string => match ($state) {
+                                'L' => 'L — Hari Libur / Akhir Pekan',
+                                'N' => 'N — Hari Kerja Normal',
+                                default => '-',
+                            })
+                            ->color(fn (?string $state): string => $state === 'L' ? 'warning' : 'info'),
+                        Infolists\Components\TextEntry::make('actual_hours')
+                            ->label('Durasi Aktual')
+                            ->formatStateUsing(fn ($state): string => $state !== null ? number_format((float) $state, 2) . ' Jam' : '-'),
+                        Infolists\Components\TextEntry::make('hourly_tariff')
+                            ->label('Tarif Sejam (Valid)')
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format((float) $state, 2, ',', '.') : '-'),
+                        Infolists\Components\TextEntry::make('multiplier')
+                            ->label('Koefisien Pengali')
+                            ->formatStateUsing(fn ($state): string => $state !== null ? number_format((float) $state, 2) . '×' : '-'),
+                        Infolists\Components\TextEntry::make('overtime_pay')
+                            ->label('Estimasi Nilai Lembur')
+                            ->weight('bold')
+                            ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format(round((float) $state, 0), 0, ',', '.') : '-'),
+                        Infolists\Components\TextEntry::make('compliance_status')
+                            ->label('Status Kepatuhan')
+                            ->badge()
+                            ->formatStateUsing(fn (?string $state): string => match ($state) {
+                                'ok' => 'Sesuai Aturan',
+                                'warning' => 'Melebihi Batas (Dengan Catatan Khusus)',
+                                'blocked' => 'Diblokir',
+                                default => 'Sesuai Aturan',
+                            })
+                            ->color(fn (?string $state): string => match ($state) {
+                                'ok' => 'success',
+                                'warning' => 'warning',
+                                'blocked' => 'danger',
+                                default => 'gray',
+                            }),
+                        Infolists\Components\TextEntry::make('compliance_override_reason')
+                            ->label('Catatan Khusus Kepatuhan')
+                            ->placeholder('-')
+                            ->columnSpan(2),
+                    ])
+                    ->columns(['default' => 1, 'sm' => 3]),
             ]);
     }
 
@@ -337,7 +443,7 @@ class OvertimeOrderResource extends Resource
                 ])->from('md'),
 
                 Tables\Columns\Layout\Panel::make([
-                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2, 'md' => 4])
+                    Tables\Columns\Layout\Grid::make(['default' => 1, 'sm' => 2, 'md' => 3])
                         ->schema([
                             Tables\Columns\TextColumn::make('overtime_number')
                                 ->description('Nomor SPKL', position: 'above')
@@ -347,15 +453,23 @@ class OvertimeOrderResource extends Resource
                             Tables\Columns\TextColumn::make('overtime_date')
                                 ->description('Tanggal Lembur', position: 'above')
                                 ->date('d M Y'),
+                            Tables\Columns\TextColumn::make('work_mode')
+                                ->description('Pola Kerja', position: 'above')
+                                ->badge()
+                                ->formatStateUsing(fn (?string $state): string => $state === 'shift' ? 'Shift' : 'Non-Shift'),
                             Tables\Columns\TextColumn::make('satuan_kerja')
                                 ->description('Satuan Kerja', position: 'above'),
                             Tables\Columns\TextColumn::make('time_range')
-                                ->description('Jam Lembur', position: 'above')
-                                ->state(fn (OvertimeOrder $record): string => ($record->start_time && $record->end_time) ? "{$record->start_time} s/d {$record->end_time}" : 'Belum diisi'),
+                                ->description('Jam & Durasi Lembur', position: 'above')
+                                ->state(fn (OvertimeOrder $record): string => ($record->start_time && $record->end_time) ? "{$record->start_time} s/d {$record->end_time} ({$record->actual_hours} jam)" : 'Belum diisi'),
+                            Tables\Columns\TextColumn::make('overtime_pay')
+                                ->description('Nilai Lembur', position: 'above')
+                                ->formatStateUsing(fn ($state): string => $state !== null ? 'Rp ' . number_format(round((float) $state, 0), 0, ',', '.') : '-'),
                         ]),
                 ])->collapsible(),
             ])
             ->filters([
+                \App\Filament\Admin\Support\RecapTableSupport::monthYearFilter('overtime_date'),
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status')
                     ->options([

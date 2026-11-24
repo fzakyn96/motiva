@@ -20,6 +20,34 @@ class OvertimeWorkflowService
 {
     public function submitCommand(OvertimeOrder $order): ApprovalRequest
     {
+        $order->loadMissing('employee');
+        $calculator = app(OvertimeCalculatorService::class);
+        $complianceService = app(OvertimeComplianceService::class);
+
+        $workMode = $order->work_mode ?: ($order->employee?->overtime_work_mode ?: 'non_shift');
+        $dayType = $calculator->resolveDayType($order->overtime_date, $workMode, (bool) $order->is_shift_day_off);
+
+        $complianceStatus = 'ok';
+        $complianceWarnings = [];
+        if ($order->employee && (float) ($order->planned_hours ?? 0) > 0) {
+            $compliance = $complianceService->evaluate(
+                $order->employee,
+                $order->overtime_date,
+                (float) $order->planned_hours,
+                $dayType,
+                $order->id
+            );
+            $complianceStatus = $compliance['status'];
+            $complianceWarnings = $compliance['warnings'];
+
+            if ($complianceStatus === 'blocked') {
+                throw new Exception(implode(' ', $complianceWarnings));
+            }
+            if ($complianceStatus === 'warning' && trim((string) $order->compliance_override_reason) === '') {
+                throw new Exception('Jam lembur melebihi batas aturan ketenagakerjaan. Wajib isi Catatan Khusus: ' . implode(' ', $complianceWarnings));
+            }
+        }
+
         $policy = ApprovalPolicy::firstOrCreate(
             ['model_type' => OvertimeOrder::class . ':command'],
             ['name' => 'Persetujuan Perintah Kerja Lembur (Bagian A)']
@@ -45,6 +73,10 @@ class OvertimeWorkflowService
         }
 
         $order->update([
+            'work_mode' => $workMode,
+            'day_type' => $dayType,
+            'compliance_status' => $complianceStatus,
+            'compliance_warnings' => ! empty($complianceWarnings) ? $complianceWarnings : null,
             'command_status' => 'pending',
             'status' => 'command_pending',
         ]);
@@ -157,7 +189,7 @@ class OvertimeWorkflowService
     }
 
     /**
-     * @param  array{start_time: string, end_time: string, actual_result: string, report_date: string}  $data
+     * @param  array{start_time: string, end_time: string, actual_result: string, report_date: string, compliance_override_reason?: string|null}  $data
      */
     public function submitReport(OvertimeOrder $order, Employee $employee, array $data): ApprovalRequest
     {
@@ -174,12 +206,43 @@ class OvertimeWorkflowService
             throw new Exception('Pegawai belum mengatur tanda tangan digital.');
         }
 
-        return DB::transaction(function () use ($order, $employee, $user, $data): ApprovalRequest {
+        $calculator = app(OvertimeCalculatorService::class);
+        $complianceService = app(OvertimeComplianceService::class);
+
+        $order->start_time = $data['start_time'];
+        $order->end_time = $data['end_time'];
+        $calc = $calculator->calculateOrder($order, $employee);
+        $compliance = $complianceService->evaluate(
+            $employee,
+            $order->overtime_date,
+            $calc['actual_hours'],
+            $calc['day_type'],
+            $order->id
+        );
+
+        $overrideReason = trim((string) ($data['compliance_override_reason'] ?? $order->compliance_override_reason ?? ''));
+
+        if ($compliance['status'] === 'blocked') {
+            throw new Exception(implode(' ', $compliance['warnings']));
+        }
+        if ($compliance['status'] === 'warning' && $overrideReason === '') {
+            throw new Exception('Jam lembur melebihi batas aturan ketenagakerjaan. Wajib isi Catatan Khusus: ' . implode(' ', $compliance['warnings']));
+        }
+
+        return DB::transaction(function () use ($order, $employee, $user, $data, $calc, $compliance, $overrideReason): ApprovalRequest {
             $order->update([
                 'start_time' => $data['start_time'],
                 'end_time' => $data['end_time'],
                 'actual_result' => $data['actual_result'],
                 'report_date' => $data['report_date'],
+                'day_type' => $calc['day_type'],
+                'actual_hours' => $calc['actual_hours'],
+                'hourly_tariff' => $calc['hourly_tariff'],
+                'multiplier' => $calc['multiplier'],
+                'overtime_pay' => $calc['overtime_pay'],
+                'compliance_status' => $compliance['status'],
+                'compliance_warnings' => ! empty($compliance['warnings']) ? $compliance['warnings'] : null,
+                'compliance_override_reason' => $overrideReason !== '' ? $overrideReason : null,
                 'report_status' => 'pending',
                 'report_submitted_at' => now(),
                 'status' => 'report_pending',
@@ -249,7 +312,14 @@ class OvertimeWorkflowService
             }
             $request->update(['status' => 'approved']);
 
+            $calc = app(OvertimeCalculatorService::class)->calculateOrder($order, $order->employee);
+
             $order->update([
+                'day_type' => $calc['day_type'],
+                'actual_hours' => $calc['actual_hours'],
+                'hourly_tariff' => $calc['hourly_tariff'],
+                'multiplier' => $calc['multiplier'],
+                'overtime_pay' => $calc['overtime_pay'],
                 'report_status' => 'approved',
                 'report_approved_by_employee_id' => $manager->id,
                 'report_approved_at' => now(),

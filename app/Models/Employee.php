@@ -15,7 +15,18 @@ class Employee extends Model
         'manager_id',
         'name',
         'identity_number',
+        'base_salary',
+        'position_allowance',
+        'overtime_work_mode',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'base_salary' => 'float',
+            'position_allowance' => 'float',
+        ];
+    }
 
     protected static function booted(): void
     {

@@ -135,6 +135,10 @@ class ViewOvertimeOrder extends ViewRecord
                         ->default(fn () => $this->getRecord()->actual_result ?: $this->getRecord()->work_description)
                         ->rows(3)
                         ->required(),
+                    Textarea::make('compliance_override_reason')
+                        ->label('Catatan Khusus (Wajib jika melebihi batas 4 jam/hari kerja atau 18 jam/minggu)')
+                        ->default(fn () => $this->getRecord()->compliance_override_reason)
+                        ->rows(2),
                 ])
                 ->modalHeading('Pertanggungjawaban Pelaksanaan Kerja Lembur (Bagian B)')
                 ->modalSubmitActionLabel('Kirim & Tandatangani')
@@ -145,12 +149,24 @@ class ViewOvertimeOrder extends ViewRecord
                         return;
                     }
 
-                    app(OvertimeWorkflowService::class)->submitReport($this->getRecord(), $employee, [
-                        'start_time' => $data['start_time'],
-                        'end_time' => $data['end_time'],
-                        'report_date' => $data['report_date'],
-                        'actual_result' => $data['actual_result'],
-                    ]);
+                    try {
+                        app(OvertimeWorkflowService::class)->submitReport($this->getRecord(), $employee, [
+                            'start_time' => $data['start_time'],
+                            'end_time' => $data['end_time'],
+                            'report_date' => $data['report_date'],
+                            'actual_result' => $data['actual_result'],
+                            'compliance_override_reason' => $data['compliance_override_reason'] ?? null,
+                        ]);
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->title('Validasi Jam Lembur Gagal')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->persistent()
+                            ->send();
+
+                        return;
+                    }
 
                     Notification::make()
                         ->title('Pertanggungjawaban Lembur Dikirim')
