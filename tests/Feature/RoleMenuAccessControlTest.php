@@ -188,9 +188,10 @@ class RoleMenuAccessControlTest extends TestCase
         $this->actingAs($this->supervisorUser);
         $this->assertFalse(SppdCostResource::canViewAny(), 'Supervisor must not access Biaya SPPD');
 
-        // 3. Staff CANNOT access Biaya SPPD
+        // 3. Staff CAN access Biaya SPPD to view and sign their own SPPD costs (read-only/sign, cannot edit)
         $this->actingAs($this->staffUser);
-        $this->assertFalse(SppdCostResource::canViewAny(), 'Staff must not access Biaya SPPD');
+        $this->assertTrue(SppdCostResource::canViewAny(), 'Staff can access Biaya SPPD to view and sign own SPPD costs');
+        $this->assertFalse(SppdCostResource::canCreate(), 'Staff cannot create Biaya SPPD');
 
         // 4. HR CAN access and edit Biaya SPPD & Tarif Standar SPPD
         $this->actingAs($this->hrUser);

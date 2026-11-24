@@ -1059,6 +1059,52 @@ class SppdResource extends Resource
         return true;
     }
 
+    public static function canEmployeeSignCost(Sppd $sppd): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user || ! $sppd->cost || $sppd->cost->status === 'rejected') {
+            return false;
+        }
+
+        if ((int) $sppd->employee?->user_id !== (int) $user->id) {
+            return false;
+        }
+
+        return ! \App\Models\DocumentSignature::where('document_type', \App\Models\SppdCost::class)
+            ->where('document_id', $sppd->cost->id)
+            ->where('role_type', 'requester')
+            ->exists();
+    }
+
+    public static function performEmployeeCostSignature(Sppd $sppd): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user || ! static::canEmployeeSignCost($sppd)) {
+            return false;
+        }
+
+        $sigService = app(\App\Services\Signature\SignatureService::class);
+        if (! $sigService->ensureUserCanSign($user)) {
+            return false;
+        }
+
+        $sigService->signDocument(
+            $sppd->cost,
+            $sppd->employee,
+            'requester',
+            'Menyetujui rincian perhitungan biaya perjalanan dinas',
+            $user
+        );
+
+        \Filament\Notifications\Notification::make()
+            ->title('Biaya SPPD Ditandatangani')
+            ->body('Tanda tangan digital Anda telah dibubuhkan ke dokumen rincian Biaya SPPD.')
+            ->success()
+            ->send();
+
+        return true;
+    }
+
     public static function applyFormToSiblings(Sppd $source, array $siblingIds): int
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $siblingIds))));

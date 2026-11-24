@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\DocumentSignature;
 use App\Models\Memo;
 use App\Models\OfficialTravelRecap;
+use App\Models\OvertimeOrder;
 use App\Models\Reimbursement;
 use App\Models\Sppd;
 use App\Models\SppdCost;
@@ -36,6 +37,8 @@ class SignatureVerificationController extends Controller
             } elseif ($document instanceof TransportAccommodationRecap || $document instanceof OfficialTravelRecap) {
                 $documentSummary = ($document->work_name ?: 'Rekapitulasi Biaya')
                     . ($document->period_label ? ' — Periode ' . $document->period_label : '');
+            } elseif ($document instanceof OvertimeOrder) {
+                $documentSummary = 'Surat Perintah Kerja Lembur — ' . ($document->employee?->name ?: '') . ' (' . ($document->overtime_date?->format('d/m/Y') ?: '-') . ')';
             }
         }
 
@@ -61,6 +64,7 @@ class SignatureVerificationController extends Controller
             $document instanceof SppdCost => app(SppdCostPrintController::class)($document, true),
             $document instanceof TransportAccommodationRecap => app(RecapPrintController::class)->transport($document),
             $document instanceof OfficialTravelRecap => app(RecapPrintController::class)->travel($document),
+            $document instanceof OvertimeOrder => app(OvertimePrintController::class)($document, true),
             default => abort(404),
         };
 

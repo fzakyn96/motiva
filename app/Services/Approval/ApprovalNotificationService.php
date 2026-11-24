@@ -12,6 +12,7 @@ use App\Models\ApprovalRequest;
 use App\Models\Employee;
 use App\Models\Memo;
 use App\Models\OfficialTravelRecap;
+use App\Models\OvertimeOrder;
 use App\Models\Reimbursement;
 use App\Models\Sppd;
 use App\Models\SppdCost;
@@ -263,10 +264,16 @@ class ApprovalNotificationService
 
             $totalCombined = $costGroup->sum(fn (SppdCost $c): float => (float) ($c->grand_total ?: $c->total_cost));
 
+            $assignedUrl = $sppd
+                ? $this->safeResourceUrl(fn () => \App\Filament\Admin\Resources\SppdCostResource::getUrl('view', ['record' => $sppd], panel: 'admin'), $baseUrl)
+                : $this->safeResourceUrl(fn () => SppdCostApprovalResource::getUrl('index', panel: 'admin'), $baseUrl);
+
             return [
                 'Biaya SPPD',
                 (string) ($sppd?->sppd_number ?? ''),
-                $this->safeResourceUrl(fn () => SppdCostApprovalResource::getUrl('index', panel: 'admin'), $baseUrl),
+                $event === 'assigned'
+                    ? $assignedUrl
+                    : $this->safeResourceUrl(fn () => SppdCostApprovalResource::getUrl('index', panel: 'admin'), $baseUrl),
                 array_filter([
                     'Agenda' => $agenda,
                     'Jumlah Pegawai' => $employeeSummaries->count() > 1 ? $employeeSummaries->count() . ' orang' : null,
@@ -310,6 +317,28 @@ class ApprovalNotificationService
                 (string) ($doc->reimbursement_number ?? ''),
                 $baseUrl ?: null,
                 [],
+            ];
+        }
+
+        if ($doc instanceof OvertimeOrder) {
+            $doc->loadMissing('employee');
+            $isReportStage = $doc->status === 'report_pending' || $doc->report_status === 'pending' || $doc->report_status === 'approved';
+            $stageLabel = $isReportStage ? 'Pertanggungjawaban Kerja Lembur' : 'Surat Perintah Kerja Lembur';
+
+            return [
+                $stageLabel,
+                (string) ($doc->overtime_number ?? ''),
+                $event === 'approved'
+                    ? $this->safeResourceUrl(fn () => route('overtimes.print', $doc), $baseUrl)
+                    : $this->safeResourceUrl(fn () => \App\Filament\Admin\Resources\OvertimeOrderResource::getUrl('view', ['record' => $doc, 'from' => 'approvals'], panel: 'admin'), $baseUrl),
+                array_filter([
+                    'Pegawai' => $doc->employee?->name,
+                    'Satuan Kerja' => $doc->satuan_kerja,
+                    'Tanggal Lembur' => $doc->overtime_date?->format('d/m/Y'),
+                    'Jam Lembur' => ($doc->start_time && $doc->end_time) ? "{$doc->start_time} s/d {$doc->end_time}" : null,
+                    'Jenis Kerja Lembur' => $doc->overtime_type,
+                    'Uraian / Hasil' => $isReportStage ? ($doc->actual_result ?: $doc->work_description) : $doc->work_description,
+                ]),
             ];
         }
 

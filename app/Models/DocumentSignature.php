@@ -60,6 +60,7 @@ class DocumentSignature extends Model
             SppdCost::class => 'Formulir Perhitungan Biaya SPPD',
             TransportAccommodationRecap::class => 'Rekapitulasi Biaya Tiket & Akomodasi',
             OfficialTravelRecap::class => 'Rekapitulasi Biaya Perjalanan Dinas',
+            OvertimeOrder::class => 'Surat Perintah Kerja Lembur (SPKL)',
             default => class_basename($this->document_type),
         };
     }
@@ -69,10 +70,14 @@ class DocumentSignature extends Model
         return match ($this->role_type) {
             'division_head' => 'Pejabat Penyetuju (Division Head)',
             'manager' => 'Pejabat Pemeriksa / Penyetuju (Manajer)',
+            'command_manager' => 'Pejabat yang Memerintahkan — Bagian A (Manajer)',
+            'report_manager' => 'Pejabat yang Memerintahkan — Bagian B (Manajer)',
             'supervisor' => 'Pemeriksa (Supervisor)',
-            'requester' => in_array($this->document_type, [TransportAccommodationRecap::class, OfficialTravelRecap::class], true)
-                ? 'Pejabat Penyusun (Business Division Head)'
-                : 'Pegawai Pengaju',
+            'requester' => match ($this->document_type) {
+                TransportAccommodationRecap::class, OfficialTravelRecap::class => 'Pejabat Penyusun (Business Division Head)',
+                OvertimeOrder::class => 'Yang Melaksanakan Kerja Lembur',
+                default => 'Pegawai Pengaju',
+            },
             'authorizer' => 'Pejabat Pemberi Perintah',
             default => 'Penandatangan',
         };

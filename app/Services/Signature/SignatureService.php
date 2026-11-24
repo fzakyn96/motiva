@@ -250,6 +250,9 @@ class SignatureService
         if ($document instanceof \App\Models\OfficialTravelRecap) {
             return $document->recap_number ?: ('REKAP-PD-' . $document->id);
         }
+        if ($document instanceof \App\Models\OvertimeOrder) {
+            return $document->overtime_number ?: ('SPKL-' . $document->id);
+        }
 
         return (string) $document->getKey();
     }

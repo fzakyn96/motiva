@@ -7,6 +7,8 @@ use App\Models\Sppd;
 use App\Models\SppdCost;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -29,7 +31,23 @@ class SppdCostResource extends Resource
     {
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
         if (! $user) return false;
-        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR']);
+        return $user->hasAnyRole(['Superadmin', 'Admin', 'HR', 'Staff']);
+    }
+
+    public static function canView(Model $record): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if (! $user || ! static::canViewAny()) {
+            return false;
+        }
+
+        if ($user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+            return true;
+        }
+
+        return $record instanceof Sppd
+            && $record->employee_id
+            && (int) $record->employee_id === (int) $user->employee?->id;
     }
 
     public static function getNavigationBadge(): ?string
@@ -84,6 +102,15 @@ class SppdCostResource extends Resource
             ->with(['employee.position', 'employee.department', 'cost', 'businessTrip.memo', 'businessTrip.sppds']);
 
         $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+        if ($user && ! $user->hasAnyRole(['Superadmin', 'Admin', 'HR'])) {
+            $employeeId = $user->employee?->id;
+            if (! $employeeId) {
+                return $query->whereRaw('1 = 0');
+            }
+
+            return $query->where('employee_id', $employeeId)->whereHas('cost');
+        }
+
         if ($user && ! $user->hasAnyRole(['Superadmin', 'Admin']) && $user->employee?->work_area_id) {
             $areaId = (int) $user->employee->work_area_id;
             $query->whereHas('employee', fn (Builder $eq) => $eq->where('work_area_id', $areaId));
@@ -726,13 +753,43 @@ class SppdCostResource extends Resource
                     ->query(fn (Builder $query, array $data) => ! empty($data['value']) ? $query->whereHas('cost', fn ($q) => $q->where('base_type', $data['value'])) : $query),
             ])
             ->actions([
+                Tables\Actions\Action::make('view_detail')
+                    ->label('Lihat')
+                    ->icon('heroicon-o-eye')
+                    ->button()
+                    ->size('sm')
+                    ->color('primary')
+                    ->visible(fn (Sppd $record): bool => $record->cost !== null)
+                    ->url(fn (Sppd $record): string => static::getUrl('view', ['record' => $record])),
+                Tables\Actions\Action::make('employee_sign_cost')
+                    ->label('Setujui & Tandatangani')
+                    ->icon('heroicon-o-check-badge')
+                    ->button()
+                    ->size('sm')
+                    ->color('success')
+                    ->visible(fn (Sppd $record): bool => SppdResource::canEmployeeSignCost($record))
+                    ->requiresConfirmation()
+                    ->modalIcon('heroicon-o-clipboard-document-check')
+                    ->modalHeading('Konfirmasi Persetujuan & Tanda Tangan Biaya SPPD')
+                    ->modalDescription(function (Sppd $record): string {
+                        $user = \Filament\Facades\Filament::auth()->user() ?? auth()->user();
+                        if (! $user?->hasConfiguredSignature()) {
+                            return 'PERHATIAN: Anda belum mengatur tanda tangan digital. Silakan atur tanda tangan terlebih dahulu di menu Pengaturan Tanda Tangan.';
+                        }
+                        $total = 'Rp ' . number_format((float) ($record->cost?->grand_total ?: $record->cost?->total_cost ?: 0), 0, ',', '.');
+
+                        return "Total rincian biaya SPPD Anda sebesar {$total}. Dengan menekan tombol di bawah, Anda menyetujui rincian biaya dan membubuhkan tanda tangan digital Anda.";
+                    })
+                    ->modalSubmitActionLabel('Ya, Setujui & Tandatangani')
+                    ->modalCancelActionLabel('Batal')
+                    ->action(fn (Sppd $record) => SppdResource::performEmployeeCostSignature($record)),
                 Tables\Actions\Action::make('calculate')
                     ->label('Hitung Biaya')
                     ->icon('heroicon-o-calculator')
                     ->button()
                     ->size('sm')
                     ->color('primary')
-                    ->visible(fn (Sppd $record) => $record->cost === null)
+                    ->visible(fn (Sppd $record): bool => $record->cost === null && static::canEdit($record))
                     ->url(fn (Sppd $record) => static::getUrl('calculate', ['record' => $record])),
                 Tables\Actions\Action::make('edit_cost')
                     ->label('Ubah Biaya')
@@ -740,7 +797,7 @@ class SppdCostResource extends Resource
                     ->button()
                     ->size('sm')
                     ->color('warning')
-                    ->visible(fn (Sppd $record) => $record->cost !== null)
+                    ->visible(fn (Sppd $record): bool => $record->cost !== null && static::canEdit($record))
                     ->url(fn (Sppd $record) => static::getUrl('calculate', ['record' => $record])),
                 Tables\Actions\Action::make('bulk_memo_calculate')
                     ->label('Bulk per Memo')
@@ -750,7 +807,7 @@ class SppdCostResource extends Resource
                     ->color('success')
                     ->tooltip('Isi rincian biaya & evidence sekaligus untuk peserta dalam Nomor Memo yang sama')
                     ->visible(function (Sppd $record): bool {
-                        if (! $record->business_trip_id) {
+                        if (! static::canEdit($record) || ! $record->business_trip_id) {
                             return false;
                         }
                         if ($record->relationLoaded('businessTrip') && $record->businessTrip && $record->businessTrip->relationLoaded('sppds')) {
@@ -775,6 +832,96 @@ class SppdCostResource extends Resource
             ->bulkActions([]);
     }
 
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Infolists\Components\Section::make('Ringkasan Penugasan & Biaya SPPD')
+                    ->icon('heroicon-o-calculator')
+                    ->iconColor('primary')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('sppd_number')
+                            ->label('Nomor SPPD')
+                            ->badge()
+                            ->color('info')
+                            ->placeholder('-'),
+                        Infolists\Components\TextEntry::make('employee.name')
+                            ->label('Pegawai yang Ditugaskan')
+                            ->weight('bold'),
+                        Infolists\Components\TextEntry::make('businessTrip.memo.nomor_memo')
+                            ->label('Nomor Memo')
+                            ->badge()
+                            ->color('gray')
+                            ->placeholder('-'),
+                        Infolists\Components\TextEntry::make('destination_location')
+                            ->label('Tujuan Penugasan')
+                            ->placeholder('-'),
+                        Infolists\Components\TextEntry::make('cost.status')
+                            ->label('Status Persetujuan Biaya')
+                            ->badge()
+                            ->formatStateUsing(fn (?string $state): string => match ($state) {
+                                'approved' => 'Disetujui Manajer',
+                                'pending' => 'Menunggu Manajer',
+                                'rejected' => 'Ditolak',
+                                default => 'Belum Dihitung',
+                            })
+                            ->color(fn (?string $state): string => match ($state) {
+                                'approved' => 'success',
+                                'pending' => 'warning',
+                                'rejected' => 'danger',
+                                default => 'gray',
+                            }),
+                        Infolists\Components\TextEntry::make('employee_sign_status')
+                            ->label('Tanda Tangan Pegawai')
+                            ->badge()
+                            ->state(function (Sppd $record): string {
+                                if (! $record->cost) {
+                                    return '-';
+                                }
+                                $signed = \App\Models\DocumentSignature::where('document_type', SppdCost::class)
+                                    ->where('document_id', $record->cost->id)
+                                    ->where('role_type', 'requester')
+                                    ->exists();
+
+                                return $signed ? 'Sudah Ditandatangani' : 'Belum Ditandatangani';
+                            })
+                            ->color(fn (string $state): string => $state === 'Sudah Ditandatangani' ? 'success' : 'warning'),
+                    ])
+                    ->columns(['default' => 1, 'sm' => 3]),
+
+                Infolists\Components\Section::make('Rincian Komponen Biaya SPPD')
+                    ->icon('heroicon-o-list-bullet')
+                    ->iconColor('info')
+                    ->visible(fn (Sppd $record): bool => $record->cost !== null)
+                    ->schema([
+                        Infolists\Components\TextEntry::make('cost.subtotal_transport')
+                            ->label('Biaya Transport')
+                            ->weight('bold')
+                            ->formatStateUsing(fn ($state): string => 'Rp ' . number_format((float) $state, 0, ',', '.')),
+                        Infolists\Components\TextEntry::make('cost.subtotal_per_diem')
+                            ->label('Uang Harian / Hotel')
+                            ->weight('bold')
+                            ->formatStateUsing(fn ($state): string => 'Rp ' . number_format((float) $state, 0, ',', '.')),
+                        Infolists\Components\TextEntry::make('cost.subtotal_other')
+                            ->label('Biaya Lainnya')
+                            ->weight('bold')
+                            ->formatStateUsing(fn ($state): string => 'Rp ' . number_format((float) $state, 0, ',', '.')),
+                        Infolists\Components\TextEntry::make('cost_grand_total')
+                            ->label('Total Keseluruhan')
+                            ->badge()
+                            ->color('success')
+                            ->state(fn (Sppd $record): string => 'Rp ' . number_format((float) ($record->cost?->grand_total ?: $record->cost?->total_cost ?: 0), 0, ',', '.')),
+                        Infolists\Components\TextEntry::make('cost.official_days')
+                            ->label('Lama Dinas')
+                            ->formatStateUsing(fn ($state): string => ($state ?? 0) . ' Hari'),
+                        Infolists\Components\TextEntry::make('cost.notes')
+                            ->label('Catatan')
+                            ->placeholder('-'),
+                    ])
+                    ->columns(['default' => 1, 'sm' => 3]),
+            ]);
+    }
+
     public static function getRelations(): array
     {
         return [];
@@ -784,6 +931,7 @@ class SppdCostResource extends Resource
     {
         return [
             'index' => Pages\ListSppdCosts::route('/'),
+            'view' => Pages\ViewSppdCost::route('/{record}'),
             'calculate' => Pages\CalculateSppdCost::route('/{record}/calculate'),
         ];
     }

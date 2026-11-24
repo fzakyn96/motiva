@@ -47,16 +47,20 @@ class SppdCostPrintController extends Controller
             ->where('role_type', 'manager')
             ->exists();
         $signerSignatureRender = $sigService->resolveRenderData(
-            $hasCostSignature ? $cost : $sppd,
+            $cost,
             $signer,
             'manager',
-            $cost->status === 'approved'
+            $hasCostSignature || $cost->status === 'approved'
         );
+        $hasEmployeeCostSignature = \App\Models\DocumentSignature::where('document_type', SppdCost::class)
+            ->where('document_id', $cost->id)
+            ->where('role_type', 'requester')
+            ->exists();
         $employeeSignatureRender = $sigService->resolveRenderData(
-            $sppd,
+            $cost,
             $sppd?->employee,
             'requester',
-            in_array($sppd?->status, ['pending', 'approved'], true)
+            $hasEmployeeCostSignature
         );
 
         $pdf = Pdf::loadView('sppd-costs.print', compact(
